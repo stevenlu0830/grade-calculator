@@ -93,3 +93,19 @@ export function formatGrade(grade: number | null): string {
   if (grade === null) return '—';
   return grade.toFixed(1);
 }
+
+export function getLetterGrade(grade: number | null): string {
+  if (grade === null) return '—';
+  const clampedGrade = Math.min(100, Math.max(0, grade));
+  if (clampedGrade >= 90) return 'A+';
+  if (clampedGrade >= 85) return 'A';
+  if (clampedGrade >= 80) return 'A-';
+  if (clampedGrade >= 76) return 'B+';
+  if (clampedGrade >= 72) return 'B';
+  if (clampedGrade >= 68) return 'B-';
+  if (clampedGrade >= 64) return 'C+';
+  if (clampedGrade >= 60) return 'C';
+  if (clampedGrade >= 55) return 'C-';
+  if (clampedGrade >= 50) return 'D';
+  return 'F';
+}
