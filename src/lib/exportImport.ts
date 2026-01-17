@@ -63,11 +63,22 @@ export const exportToCSV = (courses: Course[]): void => {
   URL.revokeObjectURL(link.href);
 };
 
+const getAdvancedOptionsText = (component: Component): string => {
+  if (component.dropLowestCount && component.dropLowestCount > 0) {
+    return `Drop lowest ${component.dropLowestCount}`;
+  }
+  if (component.downweightLowestCount && component.downweightLowestCount > 0 && 
+      component.downweightPercent && component.downweightPercent > 0) {
+    return `Downweight lowest ${component.downweightLowestCount} by ${component.downweightPercent}%`;
+  }
+  return '-';
+};
+
 export const exportToPDF = (courses: Course[]): void => {
   const doc = new jsPDF();
   
   doc.setFontSize(20);
-  doc.text('Grade Report', 14, 22);
+  doc.text('Grade Calculator Report', 14, 22);
   doc.setFontSize(10);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 30);
   
@@ -109,11 +120,13 @@ export const exportToPDF = (courses: Course[]): void => {
       
       course.components.forEach(component => {
         const componentGrade = calculateComponentGrade(component);
+        const advancedOptions = getAdvancedOptionsText(component);
         
         component.subComponents.forEach((sub, index) => {
           tableData.push([
             index === 0 ? component.name : '',
             index === 0 ? `${component.weight}%` : '',
+            index === 0 ? advancedOptions : '',
             sub.name,
             sub.grade !== null ? `${sub.grade}%` : '-',
             index === 0 ? (componentGrade !== null ? `${componentGrade.toFixed(1)}%` : '-') : ''
@@ -123,7 +136,7 @@ export const exportToPDF = (courses: Course[]): void => {
       
       autoTable(doc, {
         startY: yPosition,
-        head: [['Component', 'Weight', 'Sub-component', 'Grade', 'Component Grade']],
+        head: [['Component', 'Weight', 'Advanced Options', 'Sub-component', 'Grade', 'Component Grade']],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [99, 102, 241] },
