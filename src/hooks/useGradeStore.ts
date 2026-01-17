@@ -8,7 +8,7 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 const createDefaultSubComponent = (componentId: string): SubComponent => ({
   id: generateId(),
   componentId,
-  name: 'Assignment 1',
+  name: '',
   grade: null,
 });
 
@@ -30,7 +30,7 @@ const createDefaultCourse = (): Course => {
   const courseId = generateId();
   return {
     id: courseId,
-    name: 'New Course',
+    name: '',
     components: [],
   };
 };
@@ -138,10 +138,7 @@ export function useGradeStore() {
                       ...comp,
                       subComponents: [
                         ...comp.subComponents,
-                        {
-                          ...createDefaultSubComponent(componentId),
-                          name: `Assignment ${comp.subComponents.length + 1}`,
-                        },
+                        createDefaultSubComponent(componentId),
                       ],
                     }
                   : comp
@@ -150,6 +147,11 @@ export function useGradeStore() {
           : c
       )
     );
+    markUnsaved();
+  }, [markUnsaved]);
+
+  const importCourses = useCallback((newCourses: Course[]) => {
+    setCourses(newCourses);
     markUnsaved();
   }, [markUnsaved]);
 
@@ -233,5 +235,6 @@ export function useGradeStore() {
     addSubComponent,
     deleteSubComponent,
     updateSubComponent,
+    importCourses,
   };
 }
