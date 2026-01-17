@@ -35,9 +35,10 @@ export function CourseSection({
   onDeleteSubComponent,
   onUpdateSubComponent,
 }: CourseSectionProps) {
-  const courseGrade = calculateCourseGrade(course.components);
   const totalWeight = getTotalWeight(course.components);
-  const showWeightWarning = course.components.length > 0 && totalWeight !== 100;
+  const weightsAreValid = totalWeight === 100;
+  const courseGrade = weightsAreValid ? calculateCourseGrade(course.components) : null;
+  const showWeightWarning = course.components.length > 0 && !weightsAreValid;
 
   return (
     <Card className="border-border shadow-md overflow-hidden animate-fade-in">
@@ -59,7 +60,11 @@ export function CourseSection({
               <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
                 Final Grade
               </div>
-              <GradeDisplay grade={courseGrade} size="lg" />
+              {weightsAreValid ? (
+                <GradeDisplay grade={courseGrade} size="lg" showLetterGrade />
+              ) : (
+                <span className="text-2xl text-muted-foreground">—</span>
+              )}
             </div>
             <Button
               variant="ghost"
@@ -75,11 +80,10 @@ export function CourseSection({
 
       <CardContent className="p-4 space-y-4">
         {showWeightWarning && (
-          <Alert variant="destructive" className="bg-warning/10 border-warning text-warning-foreground">
+          <Alert variant="destructive" className="bg-warning/10 border-warning">
             <AlertTriangle className="h-4 w-4 text-warning" />
-            <AlertDescription className="text-sm">
-              Component weights total <strong>{totalWeight.toFixed(1)}%</strong>.
-              They should sum to 100%.
+            <AlertDescription className="text-sm text-foreground">
+              Component weights total {totalWeight.toFixed(1)}%. They should sum to 100%.
             </AlertDescription>
           </Alert>
         )}

@@ -1,11 +1,14 @@
 import { useGradeStore } from '@/hooks/useGradeStore';
 import { CourseSection } from '@/components/CourseSection';
 import { Button } from '@/components/ui/button';
-import { Plus, GraduationCap } from 'lucide-react';
+import { Plus, GraduationCap, Save } from 'lucide-react';
+import { toast } from 'sonner';
 
 const Index = () => {
   const {
     courses,
+    hasUnsavedChanges,
+    saveChanges,
     addCourse,
     deleteCourse,
     updateCourseName,
@@ -16,6 +19,11 @@ const Index = () => {
     deleteSubComponent,
     updateSubComponent,
   } = useGradeStore();
+
+  const handleSave = () => {
+    saveChanges();
+    toast.success('Changes saved successfully!');
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -32,10 +40,20 @@ const Index = () => {
                 <p className="text-sm text-muted-foreground">Track your course grades</p>
               </div>
             </div>
-            <Button onClick={addCourse}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Course
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant={hasUnsavedChanges ? "default" : "outline"} 
+                onClick={handleSave}
+                className={hasUnsavedChanges ? "animate-pulse" : ""}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save
+              </Button>
+              <Button onClick={addCourse}>
+                <Plus className="h-4 w-4 mr-2" />
+                New Course
+              </Button>
+            </div>
           </div>
         </div>
       </header>
