@@ -2,7 +2,7 @@ import { Component } from '@/types/grades';
 import { SubComponentRow } from './SubComponentRow';
 import { AdvancedOptions } from './AdvancedOptions';
 import { GradeDisplay } from './GradeDisplay';
-import { calculateComponentGrade } from '@/lib/gradeCalculations';
+import { calculateComponentGrade, calculateWeightedValue } from '@/lib/gradeCalculations';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,17 @@ export function ComponentCard({
   const [isOpen, setIsOpen] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const componentGrade = calculateComponentGrade(component);
+  const weightedValue = calculateWeightedValue(component);
+
+  const handleWeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value === '') {
+      onUpdate({ weight: null });
+    } else {
+      const parsed = parseFloat(value);
+      onUpdate({ weight: isNaN(parsed) ? null : parsed });
+    }
+  };
 
   return (
     <Card className="border-border shadow-sm animate-scale-in">
@@ -62,15 +73,20 @@ export function ComponentCard({
                   type="number"
                   min={0}
                   max={100}
-                  value={component.weight}
-                  onChange={e =>
-                    onUpdate({ weight: parseFloat(e.target.value) || 0 })
-                  }
+                  value={component.weight ?? ''}
+                  onChange={handleWeightChange}
                   className="w-16 h-9 text-center font-mono"
+                  placeholder=""
                 />
                 <span className="text-sm text-muted-foreground">%</span>
               </div>
               <GradeDisplay grade={componentGrade} size="md" />
+              <div className="flex items-center gap-1 min-w-[60px]">
+                <span className="text-xs text-muted-foreground">Weighted:</span>
+                <span className="text-sm font-mono font-medium">
+                  {weightedValue !== null ? weightedValue.toFixed(1) : '—'}
+                </span>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"

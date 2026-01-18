@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { useGradeStore } from '@/hooks/useGradeStore';
 import { CourseSection } from '@/components/CourseSection';
 import { Button } from '@/components/ui/button';
-import { Plus, GraduationCap, Save, Download, Upload, FileText, FileSpreadsheet } from 'lucide-react';
+import { Plus, GraduationCap, Download, Upload, FileText, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF, parseCSV } from '@/lib/exportImport';
 import {
@@ -17,8 +17,6 @@ const Index = () => {
   
   const {
     courses,
-    hasUnsavedChanges,
-    saveChanges,
     addCourse,
     deleteCourse,
     updateCourseName,
@@ -30,11 +28,6 @@ const Index = () => {
     updateSubComponent,
     importCourses,
   } = useGradeStore();
-
-  const handleSave = () => {
-    saveChanges();
-    toast.success('Changes saved successfully!');
-  };
 
   const handleExportCSV = () => {
     if (courses.length === 0) {
@@ -111,7 +104,7 @@ const Index = () => {
                 <GraduationCap className="h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-foreground">Grade Calculator</h1>
+                <h1 className="text-xl font-bold text-foreground">UBC Grade Calculator</h1>
                 <p className="text-sm text-muted-foreground">Track your course grades</p>
               </div>
             </div>
@@ -138,14 +131,6 @@ const Index = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button 
-                variant={hasUnsavedChanges ? "default" : "outline"} 
-                onClick={handleSave}
-                className={hasUnsavedChanges ? "animate-pulse" : ""}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Save
-              </Button>
               <Button onClick={addCourse}>
                 <Plus className="h-4 w-4 mr-2" />
                 New Course
