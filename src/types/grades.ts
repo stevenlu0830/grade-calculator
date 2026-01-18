@@ -9,7 +9,7 @@ export interface Component {
   id: string;
   courseId: string;
   name: string;
-  weight: number;
+  weight: number | null;
   dropLowestCount: number | null;
   downweightLowestCount: number | null;
   downweightPercent: number | null;

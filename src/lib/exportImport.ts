@@ -20,7 +20,7 @@ export const exportToCSV = (courses: Course[]): void => {
           rows.push([
             course.name,
             component.name,
-            component.weight.toString(),
+            component.weight?.toString() || '',
             component.dropLowestCount?.toString() || '',
             component.downweightLowestCount?.toString() || '',
             component.downweightPercent?.toString() || '',
@@ -32,7 +32,7 @@ export const exportToCSV = (courses: Course[]): void => {
             rows.push([
               index === 0 ? course.name : '',
               index === 0 ? component.name : '',
-              index === 0 ? component.weight.toString() : '',
+              index === 0 ? (component.weight?.toString() || '') : '',
               index === 0 ? (component.dropLowestCount?.toString() || '') : '',
               index === 0 ? (component.downweightLowestCount?.toString() || '') : '',
               index === 0 ? (component.downweightPercent?.toString() || '') : '',
@@ -78,7 +78,7 @@ export const exportToPDF = (courses: Course[]): void => {
   const doc = new jsPDF();
   
   doc.setFontSize(20);
-  doc.text('Grade Calculator Report', 14, 22);
+  doc.text('UBC Grade Calculator Report', 14, 22);
   doc.setFontSize(10);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 30);
   
@@ -125,7 +125,7 @@ export const exportToPDF = (courses: Course[]): void => {
         component.subComponents.forEach((sub, index) => {
           tableData.push([
             index === 0 ? component.name : '',
-            index === 0 ? `${component.weight}%` : '',
+            index === 0 ? (component.weight !== null ? `${component.weight}%` : '-') : '',
             index === 0 ? advancedOptions : '',
             sub.name,
             sub.grade !== null ? `${sub.grade}%` : '-',
@@ -214,7 +214,7 @@ export const parseCSV = (csvText: string): Course[] => {
         id: componentId,
         courseId: course.id,
         name: componentName,
-        weight: parseFloat(weightStr) || 0,
+        weight: weightStr ? parseFloat(weightStr) : null,
         dropLowestCount: dropLowest ? parseInt(dropLowest) : null,
         downweightLowestCount: downweightCount ? parseInt(downweightCount) : null,
         downweightPercent: downweightPercent ? parseFloat(downweightPercent) : null,

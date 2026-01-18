@@ -49,13 +49,19 @@ export function calculateComponentGrade(component: Component): number | null {
   return grades.reduce((sum, g) => sum + g, 0) / grades.length;
 }
 
+export function calculateWeightedValue(component: Component): number | null {
+  const componentGrade = calculateComponentGrade(component);
+  if (componentGrade === null || component.weight === null) return null;
+  return (componentGrade * component.weight) / 100;
+}
+
 export function calculateCourseGrade(components: Component[]): number | null {
   let totalWeightedGrade = 0;
   let totalWeight = 0;
   
   for (const component of components) {
     const componentGrade = calculateComponentGrade(component);
-    if (componentGrade !== null) {
+    if (componentGrade !== null && component.weight !== null) {
       totalWeightedGrade += componentGrade * component.weight / 100;
       totalWeight += component.weight;
     }
@@ -68,7 +74,7 @@ export function calculateCourseGrade(components: Component[]): number | null {
 }
 
 export function getTotalWeight(components: Component[]): number {
-  return components.reduce((sum, c) => sum + c.weight, 0);
+  return components.reduce((sum, c) => sum + (c.weight || 0), 0);
 }
 
 export function getGradeColor(grade: number | null): string {

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Course, Component, SubComponent } from '@/types/grades';
 
-const STORAGE_KEY = 'grade-calculator-data';
+const STORAGE_KEY = 'ubc-grade-calculator-data';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -18,7 +18,7 @@ const createDefaultComponent = (courseId: string): Component => {
     id: componentId,
     courseId,
     name: '',
-    weight: 0,
+    weight: null,
     dropLowestCount: null,
     downweightLowestCount: null,
     downweightPercent: null,
@@ -57,33 +57,25 @@ const saveToStorage = (courses: Course[]): void => {
 
 export function useGradeStore() {
   const [courses, setCourses] = useState<Course[]>(() => loadFromStorage());
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  const saveChanges = useCallback(() => {
+  // Auto-save on every change
+  useEffect(() => {
     saveToStorage(courses);
-    setHasUnsavedChanges(false);
   }, [courses]);
-
-  const markUnsaved = useCallback(() => {
-    setHasUnsavedChanges(true);
-  }, []);
 
   const addCourse = useCallback(() => {
     setCourses(prev => [...prev, createDefaultCourse()]);
-    markUnsaved();
-  }, [markUnsaved]);
+  }, []);
 
   const deleteCourse = useCallback((courseId: string) => {
     setCourses(prev => prev.filter(c => c.id !== courseId));
-    markUnsaved();
-  }, [markUnsaved]);
+  }, []);
 
   const updateCourseName = useCallback((courseId: string, name: string) => {
     setCourses(prev =>
       prev.map(c => (c.id === courseId ? { ...c, name } : c))
     );
-    markUnsaved();
-  }, [markUnsaved]);
+  }, []);
 
   const addComponent = useCallback((courseId: string) => {
     setCourses(prev =>
@@ -93,8 +85,7 @@ export function useGradeStore() {
           : c
       )
     );
-    markUnsaved();
-  }, [markUnsaved]);
+  }, []);
 
   const deleteComponent = useCallback((courseId: string, componentId: string) => {
     setCourses(prev =>
@@ -104,8 +95,7 @@ export function useGradeStore() {
           : c
       )
     );
-    markUnsaved();
-  }, [markUnsaved]);
+  }, []);
 
   const updateComponent = useCallback(
     (courseId: string, componentId: string, updates: Partial<Component>) => {
@@ -121,9 +111,8 @@ export function useGradeStore() {
             : c
         )
       );
-      markUnsaved();
     },
-    [markUnsaved]
+    []
   );
 
   const addSubComponent = useCallback((courseId: string, componentId: string) => {
@@ -147,13 +136,11 @@ export function useGradeStore() {
           : c
       )
     );
-    markUnsaved();
-  }, [markUnsaved]);
+  }, []);
 
   const importCourses = useCallback((newCourses: Course[]) => {
     setCourses(newCourses);
-    markUnsaved();
-  }, [markUnsaved]);
+  }, []);
 
   const deleteSubComponent = useCallback(
     (courseId: string, componentId: string, subComponentId: string) => {
@@ -175,9 +162,8 @@ export function useGradeStore() {
             : c
         )
       );
-      markUnsaved();
     },
-    [markUnsaved]
+    []
   );
 
   const updateSubComponent = useCallback(
@@ -217,15 +203,12 @@ export function useGradeStore() {
             : c
         )
       );
-      markUnsaved();
     },
-    [markUnsaved]
+    []
   );
 
   return {
     courses,
-    hasUnsavedChanges,
-    saveChanges,
     addCourse,
     deleteCourse,
     updateCourseName,
