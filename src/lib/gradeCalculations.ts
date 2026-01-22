@@ -57,20 +57,20 @@ export function calculateWeightedValue(component: Component): number | null {
 
 export function calculateCourseGrade(components: Component[]): number | null {
   let totalWeightedGrade = 0;
-  let totalWeight = 0;
+  let hasAnyGrade = false;
   
   for (const component of components) {
     const componentGrade = calculateComponentGrade(component);
     if (componentGrade !== null && component.weight !== null) {
       totalWeightedGrade += componentGrade * component.weight / 100;
-      totalWeight += component.weight;
+      hasAnyGrade = true;
     }
   }
   
-  if (totalWeight === 0) return null;
+  if (!hasAnyGrade) return null;
   
-  // Return grade proportional to weights with grades
-  return (totalWeightedGrade / totalWeight) * 100;
+  // Simply sum up the weighted grades
+  return totalWeightedGrade;
 }
 
 export function getTotalWeight(components: Component[]): number {
