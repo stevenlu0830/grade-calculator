@@ -120,6 +120,9 @@ export const exportToPDF = (courses: Course[]): void => {
       
       course.components.forEach(component => {
         const componentGrade = calculateComponentGrade(component);
+        const weightedGrade = componentGrade !== null && component.weight !== null 
+          ? (componentGrade * component.weight) / 100 
+          : null;
         const advancedOptions = getAdvancedOptionsText(component);
         
         component.subComponents.forEach((sub, index) => {
@@ -129,14 +132,15 @@ export const exportToPDF = (courses: Course[]): void => {
             index === 0 ? advancedOptions : '',
             sub.name,
             sub.grade !== null ? `${sub.grade}%` : '-',
-            index === 0 ? (componentGrade !== null ? `${componentGrade.toFixed(1)}%` : '-') : ''
+            index === 0 ? (componentGrade !== null ? `${componentGrade.toFixed(1)}%` : '-') : '',
+            index === 0 ? (weightedGrade !== null ? `${weightedGrade.toFixed(1)}%` : '-') : ''
           ]);
         });
       });
       
       autoTable(doc, {
         startY: yPosition,
-        head: [['Component', 'Weight', 'Advanced Options', 'Sub-component', 'Grade', 'Component Grade']],
+        head: [['Component', 'Weight', 'Advanced Options', 'Sub-component', 'Grade', 'Component Grade', 'Weighted Grade']],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [99, 102, 241] },
