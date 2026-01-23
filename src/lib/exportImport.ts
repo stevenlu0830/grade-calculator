@@ -183,6 +183,26 @@ export const parseCSV = (csvText: string): Course[] => {
     return result;
   });
   
+  // Map column indices from header (robust to extra/reordered columns)
+  const header = (lines[0] || []).map(h => (h ?? '').trim());
+  const getColIndex = (name: string, fallback: number): number => {
+    const idx = header.indexOf(name);
+    return idx >= 0 ? idx : fallback;
+  };
+
+  const col = {
+    courseName: getColIndex('Course Name', 0),
+    componentName: getColIndex('Component Name', 1),
+    weight: getColIndex('Component Weight (%)', 2),
+    dropLowest: getColIndex('Drop Lowest', 3),
+    downweightCount: getColIndex('Downweight Count', 4),
+    downweightPercent: getColIndex('Downweight %', 5),
+    subName: getColIndex('Sub-component Name', 6),
+    grade: getColIndex('Grade', 7),
+  };
+
+  const expectedCols = Math.max(header.length, 8);
+
   // Skip header row
   const dataLines = lines.slice(1).filter(row => row.some(cell => cell !== ''));
   
@@ -192,11 +212,19 @@ export const parseCSV = (csvText: string): Course[] => {
   let currentComponent: Component | null = null;
   
   dataLines.forEach(row => {
-    // Ensure we have all 8 columns by padding with empty strings
-    while (row.length < 8) {
+    // Ensure we have all expected columns by padding with empty strings
+    while (row.length < expectedCols) {
       row.push('');
     }
-    const [courseName, componentName, weightStr, dropLowest, downweightCount, downweightPercent, subName, gradeStr] = row;
+    
+    const courseName = row[col.courseName] ?? '';
+    const componentName = row[col.componentName] ?? '';
+    const weightStr = row[col.weight] ?? '';
+    const dropLowest = row[col.dropLowest] ?? '';
+    const downweightCount = row[col.downweightCount] ?? '';
+    const downweightPercent = row[col.downweightPercent] ?? '';
+    const subName = row[col.subName] ?? '';
+    const gradeStr = row[col.grade] ?? '';
     
     // Get or create course
     const effectiveCourseName = courseName || currentCourseName;
