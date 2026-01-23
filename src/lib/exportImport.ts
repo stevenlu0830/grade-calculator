@@ -192,6 +192,10 @@ export const parseCSV = (csvText: string): Course[] => {
   let currentComponent: Component | null = null;
   
   dataLines.forEach(row => {
+    // Ensure we have all 8 columns by padding with empty strings
+    while (row.length < 8) {
+      row.push('');
+    }
     const [courseName, componentName, weightStr, dropLowest, downweightCount, downweightPercent, subName, gradeStr] = row;
     
     // Get or create course
