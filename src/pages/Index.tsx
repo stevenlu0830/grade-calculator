@@ -141,7 +141,7 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container max-w-4xl mx-auto px-4 py-8">
+      <main className="container max-w-7xl mx-auto px-4 py-8">
         {courses.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="p-4 rounded-2xl bg-muted mb-6">
@@ -165,32 +165,37 @@ const Index = () => {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="flex gap-6 overflow-x-auto pb-4 snap-x snap-mandatory">
             {courses.map(course => (
-              <CourseSection
+              <div
                 key={course.id}
-                course={course}
-                onUpdateName={name => updateCourseName(course.id, name)}
-                onDelete={() => deleteCourse(course.id)}
-                onAddComponent={() => addComponent(course.id)}
-                onDeleteComponent={componentId =>
-                  deleteComponent(course.id, componentId)
-                }
-                onUpdateComponent={(componentId, updates) =>
-                  updateComponent(course.id, componentId, updates)
-                }
-                onAddSubComponent={componentId =>
-                  addSubComponent(course.id, componentId)
-                }
-                onDeleteSubComponent={(componentId, subComponentId) =>
-                  deleteSubComponent(course.id, componentId, subComponentId)
-                }
-                onUpdateSubComponent={(componentId, subComponentId, updates) =>
-                  updateSubComponent(course.id, componentId, subComponentId, updates)
-                }
-              />
+                className="flex-shrink-0 w-full max-w-2xl snap-start"
+              >
+                <CourseSection
+                  course={course}
+                  onUpdateName={name => updateCourseName(course.id, name)}
+                  onDelete={() => deleteCourse(course.id)}
+                  onAddComponent={() => addComponent(course.id)}
+                  onDeleteComponent={componentId =>
+                    deleteComponent(course.id, componentId)
+                  }
+                  onUpdateComponent={(componentId, updates) =>
+                    updateComponent(course.id, componentId, updates)
+                  }
+                  onAddSubComponent={componentId =>
+                    addSubComponent(course.id, componentId)
+                  }
+                  onDeleteSubComponent={(componentId, subComponentId) =>
+                    deleteSubComponent(course.id, componentId, subComponentId)
+                  }
+                  onUpdateSubComponent={(componentId, subComponentId, updates) =>
+                    updateSubComponent(course.id, componentId, subComponentId, updates)
+                  }
+                />
+              </div>
             ))}
           </div>
+
         )}
       </main>
     </div>
