@@ -141,7 +141,7 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container max-w-4xl mx-auto px-4 py-8">
+      <main className="container max-w-7xl mx-auto px-4 py-8">
         {courses.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="p-4 rounded-2xl bg-muted mb-6">
