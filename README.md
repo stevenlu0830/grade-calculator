@@ -1,7 +1,7 @@
 # Technical README — UBC Grade Calculator
 
 > Living documentation. Update this file when architecture, data flow, or invariants change.
-> Companions: [CODEBASE_INDEX.md](CODEBASE_INDEX.md) (what lives where) · [CONVENTIONS.md](CONVENTIONS.md) (how to write code here).
+> Companions: [CODEBASE_INDEX.md](CODEBASE_INDEX.md) (what lives where) · [CONVENTIONS.md](CONVENTIONS.md) (how to write code here) · [UI_GUIDE.md](UI_GUIDE.md) (beginner tour of `public/` and the shadcn `ui/` folder).
 
 ## 1. What this is
 
@@ -22,22 +22,27 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | UI | React 18 | No Suspense, no server components |
 | Routing | react-router-dom 6 | Two routes; effectively a single page |
 | Styling | Tailwind 3 + CSS variables | shadcn/ui `default` style, slate base |
-| Components | shadcn/ui over Radix | 49 vendored primitives, ~11 in use |
+| Components | shadcn/ui over Radix | 48 vendored primitives, ~11 in use |
 | PDF | `jspdf` + `jspdf-autotable` | |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | Placeholder test only |
+| Tests | Vitest 3 + jsdom + Testing Library | 123 tests over `src/lib/*`; components untested |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template.
 
 ## 3. Running it
 
 ```sh
+git clone https://github.com/stevenlu0830/grade-calculator.git
+cd grade-calculator
+
 npm i          # bun.lock is also committed — see §9
 npm run dev    # http://localhost:8080
 npm run build  # → dist/
 npm run lint
 npm test       # vitest run
 ```
+
+This project was scaffolded with Lovable ([project dashboard](https://lovable.dev/projects/d0699e8b-131a-4000-8300-6958b9e4ca5b)); changes pushed to the repo and changes made there stay in sync. Editing locally, in GitHub's web editor, or in a Codespace all work.
 
 ## 4. Domain model
 
@@ -79,10 +84,12 @@ Note `"grade": null` on A2 — entered but ungraded, so it's excluded from the a
 
 [src/hooks/useGradeStore.ts](src/hooks/useGradeStore.ts) is the only stateful module.
 
-- `useState<Course[]>` with a lazy initializer that reads `localStorage`.
+- `useState<Course[]>` with a lazy initializer that reads through a `CourseStorage`.
 - A `useEffect` on `[courses]` writes the whole array back on every change — autosave is implicit and total; no component ever calls `localStorage` itself.
-- Storage key: `ubc-grade-calculator-data`. Both read and write are wrapped in try/catch and degrade to console errors (handles private-mode and quota failures).
-- IDs: `Math.random().toString(36).substr(2, 9)`.
+- Persistence is injected, not imported: the hook takes a `CourseStorage` and defaults to `localCourseStorage`. Swapping in a server-backed or in-memory implementation touches no state logic. See [src/lib/courseStorage.ts](src/lib/courseStorage.ts).
+- Storage key: `ubc-grade-calculator-data`. Read and write both degrade to console errors (private-mode and quota failures).
+- IDs come from `createId()` in [src/lib/id.ts](src/lib/id.ts) — `crypto.randomUUID()`, with a `Math.random` fallback for non-DOM environments.
+- Nested updates go through the module-local `mapCourse` / `mapComponent` helpers, so each action stays a few lines rather than a four-deep `.map` pyramid.
 
 **Deliberately not a Context.** The hook is called once in `Index.tsx` and its actions are passed down as props. Calling `useGradeStore()` in a second component would create a *second independent store* whose writes race the first over the same key. If you need store access deeper in the tree, lift the call or introduce a Context — don't just call the hook again.
 
@@ -95,25 +102,25 @@ Note `"grade": null` on A2 — entered but ungraded, so it's excluded from the a
 
 ## 6. Grade calculation
 
-All math is pure and lives in [src/lib/gradeCalculations.ts](src/lib/gradeCalculations.ts). Nothing memoized — the tree is small and recomputes on every render.
+The maths is pure and split across two modules. [gradeCalculations.ts](src/lib/gradeCalculations.ts) aggregates; [gradePolicies.ts](src/lib/gradePolicies.ts) holds the drop/downweight rules. Neither knows how a grade is displayed — that's [gradeFormatting.ts](src/lib/gradeFormatting.ts). Nothing is memoized; the tree is small and recomputes on every render.
 
 **Component grade** (`calculateComponentGrade`), in order:
 1. Collect non-null sub-component grades. None → `null`.
 2. Exactly one grade → return it. **Drop and downweight are skipped for a single grade** — you can't drop your only mark.
-3. Sort ascending, then apply the first matching policy:
-   - **Drop lowest N** — drops `min(N, len-1)`, so at least one grade always survives even if N exceeds the count. Unweighted mean of the rest.
-   - **Downweight lowest N by P%** — the N lowest get weight `1 - P/100`, the rest weight `1`; returns the weighted mean. `P = 100` is equivalent to dropping, except the grade still counts toward the denominator boundary case.
+3. Sort ascending, then dispatch on `getActiveAdvancedOption(component)`:
+   - **Drop lowest N** (`applyDropLowest`) — drops `min(N, len-1)`, so at least one grade always survives even if N exceeds the count. Unweighted mean of the rest.
+   - **Downweight lowest N by P%** (`applyDownweightLowest`) — the N lowest get weight `1 - P/100`, the rest weight `1`; returns the weighted mean. Returns `null` in the degenerate case where every grade is discounted to zero weight.
    - **Neither** — plain mean.
-4. Drop takes precedence if both are set. The UI makes this unreachable (§7), but the calc layer is defensive.
+4. Drop takes precedence if both are set — `getActiveAdvancedOption` encodes that, and the UI reads the same function, so the calculator and the toggles can't disagree.
 
-**Course grade** (`calculateCourseGrade`) sums `componentGrade × weight / 100` across components that have *both* a grade and a weight; returns `null` if none qualify. It does **not** check that weights sum to 100 — that gate lives in the callers:
-- [CourseSection.tsx](src/components/CourseSection.tsx) shows a warning alert and renders `—` unless `getTotalWeight(...) === 100`.
-- [exportImport.ts](src/lib/exportImport.ts) prints a warning line in the PDF instead of a grade.
+**Course grade** (`calculateCourseGrade`) sums each component's `calculateWeightedValue` across components that have *both* a grade and a weight; returns `null` if none qualify. It does **not** check that weights sum to 100 — that gate is `areWeightsValid(components)`, called by both consumers:
+- [CourseSection.tsx](src/components/CourseSection.tsx) shows a warning alert and renders `—` when it fails.
+- [pdfExport.ts](src/lib/pdfExport.ts) prints a warning line instead of a grade.
 
-⚠️ The check is exact equality on a float sum. Weights of `33.33 × 3` will not equal 100. If users report a missing final grade with visually correct weights, this is why — fix with an epsilon comparison in one shared helper, not per-caller.
+`areWeightsValid` compares against 100 with a `1e-9` tolerance rather than `===`. Summing decimal weights drifts: `0.01 + 64.04 + 35.95` evaluates to `100.00000000000001`, and exact equality used to hide the final grade behind a warning that read "weights total 100.0%". The tolerance absorbs float error only — `33.33 × 3 = 99.99` is a real shortfall and still warns.
 
 **Two threshold scales coexist, intentionally:**
-- Color bands (`getGradeColor`/`getGradeBg`): 90 / 80 / 70 / 60.
+- Color bands (`getGradeColor`/`getGradeBg`): 90 / 80 / 70 / 60, from one `COLOUR_BANDS` table pairing text and background so they can't drift apart.
 - Letter grades (`getLetterGrade`): UBC scale — A+ ≥90, A ≥85, A- ≥80, B+ ≥76, B ≥72, B- ≥68, C+ ≥64, C ≥60, C- ≥55, D ≥50, F below.
 
 A grade of 82 therefore shows green ("good") and the letter `A-`. Don't "fix" one to match the other without asking.
@@ -138,28 +145,33 @@ Same data with *downweight lowest 1 by 50%* instead of drop, on Assignments:
 - Weighted sum = `30 + 85 + 90 + 95` = `300`; total weight = `3.5` → **85.71**
 - Contribution `34.29`, course grade **81.1** — still A-, but the dropped mark still drags.
 
-Now delete the Final Exam component. Total weight becomes 40, the equality gate fails, and the final grade renders `—` even though Assignments has a perfectly valid 90. This is expected behavior, and the most common source of "the calculator is broken" reports.
+Now delete the Final Exam component. Total weight becomes 40, `areWeightsValid` fails, and the final grade renders `—` even though Assignments has a perfectly valid 90. This is expected behavior, and the most common source of "the calculator is broken" reports.
 
 ## 7. UI structure & data flow
 
 ```
 main.tsx → App.tsx (providers + router)
-             └── pages/Index.tsx ............ owns useGradeStore, header, import/export, empty state
-                  └── CourseSection ......... weight validation, final grade, course delete
-                       └── ComponentCard .... weight input, component grade, collapse, advanced toggle
+             └── pages/Index.tsx ............ owns useGradeStore, header shell, empty state, carousel
+                  ├── CourseToolbar ........ import / export / new-course actions + their toasts
+                  └── CourseSection ........ weight validation, final grade, course delete
+                       └── ComponentCard ... weight input, component grade, collapse, advanced toggle
                             ├── SubComponentRow ... name + grade inputs
                             └── AdvancedOptions ... drop / downweight switches
 ```
 
 State flows down as props; mutations flow up as `on*` callbacks, with each level closing over its own ID so children stay ID-agnostic. Nothing below `Index` knows the store exists.
 
+CSV file handling lives in [useCsvImport](src/hooks/useCsvImport.ts) — it owns the hidden `<input type="file">`, the read, the parse and the toasts, and is a hook rather than a button so the header and the empty state can both open the same picker.
+
 **Layout:** courses render in a horizontal scroll-snap carousel (`overflow-x-auto snap-x snap-mandatory`), each capped at `max-w-2xl`. This is a deliberate choice from commit `d3347fb`, not a wrapping grid.
 
-**AdvancedOptions** derives its mode rather than storing it: `activeOption` is `dropLowest` if `dropLowestCount !== null`, else `downweight` if `downweightLowestCount !== null`, else `none`. Enabling either switch nulls the other's fields, and each switch is disabled while the other is active — mutual exclusivity is enforced structurally, so `AdvancedOption` never needs persisting.
+**AdvancedOptions** holds no rules of its own. It reads `getActiveAdvancedOption(component)` for the current mode and calls `advancedOptionUpdate(option)` to switch, so "drop wins over downweight" and "enabling one clears the other" are defined once in `gradePolicies` and shared with the calculator. Each switch is disabled while the other is active, and `AdvancedOption` is never persisted.
 
 ## 8. Import / export
 
-[src/lib/exportImport.ts](src/lib/exportImport.ts). All three operations are synchronous, in-browser, and never touch the network.
+Three modules, one per responsibility: [csvExport.ts](src/lib/csvExport.ts), [csvImport.ts](src/lib/csvImport.ts), [pdfExport.ts](src/lib/pdfExport.ts). All operations are synchronous, in-browser, and never touch the network.
+
+Each export separates **building** the artifact from **handing it to the browser**. `buildCoursesCsv(courses)` and `buildReportRows(course)` are pure and directly asserted in tests; the only DOM contact is `downloadBlob` in [download.ts](src/lib/download.ts). Before this split the CSV format could not be tested at all, because producing it required `URL.createObjectURL`.
 
 **CSV format** — 8 columns, one row per sub-component:
 
@@ -167,58 +179,63 @@ State flows down as props; mutations flow up as `on*` callbacks, with each level
 Course Name, Component Name, Component Weight (%), Drop Lowest, Downweight Count, Downweight %, Sub-component Name, Grade
 ```
 
-Parent columns are written **only on the first row of each group** and blank thereafter — a sparse, human-readable shape. `parseCSV` mirrors this by carrying the last-seen course and component forward across blank cells.
+Parent columns are written **only on the first row of each group** and blank thereafter — a sparse, human-readable shape, applied via the shared `firstRowOnly` helper in [exportFormat.ts](src/lib/exportFormat.ts) so CSV and PDF can't diverge. `parseCSV` mirrors it by carrying the last-seen course and component forward across blank cells.
 
-**The parser is hand-rolled** (no papaparse). It:
+**The parser is hand-rolled** (no papaparse) and runs in three steps — `parseLine` tokenises, `resolveColumns` maps headers, then the tree is assembled. It:
 - handles quoted fields and `""` escapes,
 - resolves columns **by header name** with positional fallback, so reordered or extra columns survive a round-trip,
-- pads short rows, clamps grades to `[0, 100]`, and backfills an empty sub-component where a component would otherwise have none.
+- pads short rows, clamps grades with `clampGrade`, and backfills an empty sub-component where a component would otherwise have none.
+
+An export → import round trip is covered by tests, including names containing commas and quotes.
 
 ⚠️ **Known limitation:** the input is split on `\n` *before* quote-aware parsing, so a quoted field containing a newline breaks into multiple rows. Fine for self-exported files; a real risk for spreadsheets pasted from elsewhere. Fixing this means restructuring the tokenizer to consume the whole string — or adopting a CSV library.
 
 Import is destructive: it replaces all existing courses with no confirmation prompt.
 
-**PDF export** builds a per-course heading plus an autoTable of components and sub-components, using the same first-row-only blanking convention. `(doc as any).lastAutoTable.finalY` is a jsPDF typing workaround, not a pattern to copy.
+**PDF export** builds a per-course heading plus an autoTable, using the same first-row-only convention. The plugin ships `jsPDFDocument = any`, so its cursor position is described by a local `AutoTableDocument` interface and read with optional chaining — a narrow, documented cast instead of `as any`. A test asserts the plugin really does populate `lastAutoTable.finalY`, since a silent fallback there would make multi-course reports overlap.
 
 ## 9. Known issues & technical debt
 
 Ordered roughly by how likely each is to bite you.
 
-1. **No real test coverage.** [src/test/example.test.ts](src/test/example.test.ts) asserts `true === true`. The grading rules in §6 and the CSV parser in §8 are the highest-value, easiest-to-test surfaces in the repo and both are unverified.
-2. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0`, the compiler is not currently protecting the codebase's central invariant. Enabling `strictNullChecks` would be the single highest-leverage cleanup — and will surface real findings.
-3. **Float equality on weight totals** (§6) — silently hides the final grade.
-4. **CSV newline handling** (§8).
-5. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
-6. **Duplicate lockfiles.** `bun.lock` is committed; `package-lock.json` is untracked and currently uncommitted alongside a `vite` `^5.4.19 → ^8.2.0` bump in `package.json`. Decide on one package manager and commit the matching lockfile — the working tree is mid-migration right now.
-7. **Dead code:** [src/App.css](src/App.css) (never imported), [NavLink.tsx](src/components/NavLink.tsx) (no nav), duplicated `use-toast.ts` in two directories, `generateId` copy-pasted into both `useGradeStore.ts` and `exportImport.ts`, and ~38 unused shadcn primitives.
-8. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing.
-9. **`Math.random()` IDs** — fine at this scale; collision-prone only in adversarial cases. `crypto.randomUUID()` is a drop-in upgrade.
-10. **No undo and no delete confirmation** on courses or components.
+1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
+2. **CSV newline handling** (§8) — a quoted field containing a line break tears across rows.
+3. **No component test coverage.** `src/lib/*` is well covered (123 tests); every React component is untested. `AdvancedOptions` and `CourseSection` carry the most branching.
+4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
+5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
+6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. ~38 shadcn primitives are also unused, though those tree-shake.
+7. **No schema version on persisted data** (§4) — a breaking change to the `Course[]` shape will silently corrupt saved data. There is no migration path.
+8. **No undo and no delete confirmation** on courses or components.
+9. **Prop drilling.** `CourseSectionProps` takes 9 props and forwards 6 it never uses. Deliberately left as-is: at three levels it stays readable and keeps components trivially testable. Revisit if a fourth level appears.
+
+**Resolved in the refactor** (see §6–§8): float-equality on weight totals, the misleading "totals 100.0%" warning, `exportImport.ts` doing three jobs at once, untestable export code, grading rules duplicated between the calculator and the toggle UI, `generateId`/clamp/weighted-value duplication, `(doc as any)`, and the dead `App.css` / `NavLink.tsx` / `ui/use-toast.ts`.
 
 ## 10. Extension guide
 
-- **New grading policy** (e.g. "best N of M"): add fields to `Component` in `types/grades.ts` → add a branch in `calculateComponentGrade` *before* the default mean → add a mutually-exclusive switch in `AdvancedOptions` → add CSV columns in both `exportToCSV` and the `col` map in `parseCSV`. Four files, in that order.
+- **New grading policy** (e.g. "best N of M"): add fields to `Component` in `types/grades.ts` → add the rule to `gradePolicies.ts` (an `applyBestOf` function, a case in `getActiveAdvancedOption`, and one in `advancedOptionUpdate`) → add a `case` in `calculateComponentGrade`'s switch → add a switch to `AdvancedOptions` → add the columns to `CSV_HEADERS` and `resolveColumns`. The switch is exhaustive over `AdvancedOption`, so TypeScript will point at every site you still need to touch.
 - **New route:** add `<Route>` in `App.tsx` above the `*` catch-all, create the page in `src/pages/`.
 - **Deeper store access:** convert `useGradeStore` into a Context provider rather than calling the hook twice (§5).
 - **New UI primitive:** `npx shadcn@latest add <name>` — never hand-write into `src/components/ui/`.
 - **New semantic color:** HSL var in both `:root` and `.dark` in `index.css`, then map it in `tailwind.config.ts`.
-- **Backend/sync, if ever:** `useGradeStore` is the seam. Its action surface is already the full mutation API; react-query is already mounted and idle.
+- **New export format:** write a pure `build…` function, then a wrapper that calls `downloadBlob` with `timestampedFilename`. Keep the wrapper too small to need a test.
+- **Backend/sync, if ever:** implement the `CourseStorage` interface and pass it to `useGradeStore` — the store already depends on the interface rather than on `localStorage`. react-query is mounted and idle.
 
 ## 11. Symptom → cause map
 
 | Symptom | Likely cause | Look in |
 |---|---|---|
-| Final grade shows `—` despite grades entered | Component weights don't sum to exactly 100 (float equality, §6) | [CourseSection.tsx:39](src/components/CourseSection.tsx:39) |
-| Final grade `—` with weights that look correct | `33.33 × 3 = 99.99` — exact-equality gate | `getTotalWeight` + the `=== 100` callers |
-| A grade of `0` is ignored in the average | Somewhere used `||` instead of `??`, collapsing 0 to "unset" | grep for `|| ''` / `|| 0` |
+| Final grade shows `—` despite grades entered | Component weights genuinely don't reach 100 — the warning shows the real total | [CourseSection.tsx](src/components/CourseSection.tsx), `areWeightsValid` |
+| Warning shows a total that looks like 100 | Should no longer happen — `formatWeight` keeps 2 decimals so 99.99 reads as 99.99 | [gradeFormatting.ts](src/lib/gradeFormatting.ts), `formatWeight` |
+| A grade of `0` is ignored in the average | Somewhere used `||` instead of `??`, collapsing 0 to "unset" | grep for `\|\| ''` / `\|\| 0` |
 | Grade entered but component still `—` | Non-numeric input never reached the store — `handleGradeChange` drops `NaN` | [SubComponentRow.tsx:19](src/components/SubComponentRow.tsx:19) |
-| CSV import produces garbled/extra rows | Quoted field contained a newline (§8) | `parseCSV`, the `split('\n')` |
+| CSV import produces garbled/extra rows | Quoted field contained a newline (§8) | [csvImport.ts](src/lib/csvImport.ts), the `split('\n')` |
 | CSV import silently loses a component | Its row had a blank Component Name, so it merged into the previous one | `parseCSV` carry-forward logic |
-| Edits don't persist across reload | `localStorage` write threw (private mode / quota) — check console | `saveToStorage` |
+| Edits don't persist across reload | Storage write threw (private mode / quota) — check console | [courseStorage.ts](src/lib/courseStorage.ts) |
 | Two parts of the UI disagree about state | A second `useGradeStore()` call created a rival store (§5) | grep `useGradeStore` — must appear once |
-| Delete button does nothing on a sub-component | It's the last one; deletion is blocked by design | [useGradeStore.ts:155](src/hooks/useGradeStore.ts:155) |
+| Delete button does nothing on a sub-component | It's the last one; deletion is blocked by design | [useGradeStore.ts](src/hooks/useGradeStore.ts), `deleteSubComponent` |
 | Dark styles never apply | No `ThemeProvider` mounts; `.dark` is never added (§9) | `App.tsx` |
-| Both advanced switches appear settable | Shouldn't happen — each disables the other | [AdvancedOptions.tsx:18](src/components/AdvancedOptions.tsx:18) |
+| A policy applies in the UI but not in the grade | The two now share `getActiveAdvancedOption`; suspect a new field added to only one | [gradePolicies.ts](src/lib/gradePolicies.ts) |
+| Multi-course PDF rows overlap | `lastAutoTable.finalY` came back undefined and spacing fell back | [pdfExport.ts](src/lib/pdfExport.ts), `renderCourse` |
 
 ## 12. Glossary
 

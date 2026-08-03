@@ -1,20 +1,11 @@
-import { useRef } from 'react';
 import { useGradeStore } from '@/hooks/useGradeStore';
+import { useCsvImport } from '@/hooks/useCsvImport';
 import { CourseSection } from '@/components/CourseSection';
+import { CourseToolbar } from '@/components/CourseToolbar';
 import { Button } from '@/components/ui/button';
-import { Plus, GraduationCap, Download, Upload, FileText, FileSpreadsheet } from 'lucide-react';
-import { toast } from 'sonner';
-import { exportToCSV, exportToPDF, parseCSV } from '@/lib/exportImport';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { GraduationCap, Plus, Upload } from 'lucide-react';
 
 const Index = () => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
   const {
     courses,
     addCourse,
@@ -29,73 +20,18 @@ const Index = () => {
     importCourses,
   } = useGradeStore();
 
-  const handleExportCSV = () => {
-    if (courses.length === 0) {
-      toast.error('No courses to export');
-      return;
-    }
-    exportToCSV(courses);
-    toast.success('Exported to CSV');
-  };
-
-  const handleExportPDF = () => {
-    if (courses.length === 0) {
-      toast.error('No courses to export');
-      return;
-    }
-    exportToPDF(courses);
-    toast.success('Exported to PDF');
-  };
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.csv')) {
-      toast.error('Please select a CSV file');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const csvText = event.target?.result as string;
-        const parsedCourses = parseCSV(csvText);
-        
-        if (parsedCourses.length === 0) {
-          toast.error('No valid data found in CSV');
-          return;
-        }
-        
-        importCourses(parsedCourses);
-        toast.success(`Imported ${parsedCourses.length} course(s)`);
-      } catch (error) {
-        console.error('Import error:', error);
-        toast.error('Failed to parse CSV file');
-      }
-    };
-    reader.readAsText(file);
-    
-    // Reset input so same file can be selected again
-    e.target.value = '';
-  };
+  const { inputRef, openFilePicker, handleFileChange } = useCsvImport(importCourses);
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Hidden file input for import */}
       <input
         type="file"
-        ref={fileInputRef}
+        ref={inputRef}
         onChange={handleFileChange}
         accept=".csv"
         className="hidden"
       />
 
-      {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="container max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -108,53 +44,27 @@ const Index = () => {
                 <p className="text-sm text-muted-foreground">Track your course grades</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={handleImportClick}>
-                <Upload className="h-4 w-4 mr-2" />
-                Import
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={handleExportCSV}>
-                    <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Export as CSV
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExportPDF}>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Export as PDF
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button onClick={addCourse}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Course
-              </Button>
-            </div>
+            <CourseToolbar
+              courses={courses}
+              onImportClick={openFilePicker}
+              onAddCourse={addCourse}
+            />
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container max-w-7xl mx-auto px-4 py-8">
         {courses.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="p-4 rounded-2xl bg-muted mb-6">
               <GraduationCap className="h-12 w-12 text-muted-foreground" />
             </div>
-            <h2 className="text-2xl font-semibold text-foreground mb-2">
-              No courses yet
-            </h2>
+            <h2 className="text-2xl font-semibold text-foreground mb-2">No courses yet</h2>
             <p className="text-muted-foreground mb-6 max-w-sm">
               Add your first course to start calculating your grades in real-time.
             </p>
             <div className="flex gap-3">
-              <Button variant="outline" onClick={handleImportClick}>
+              <Button variant="outline" onClick={openFilePicker}>
                 <Upload className="h-5 w-5 mr-2" />
                 Import from CSV
               </Button>
@@ -167,24 +77,17 @@ const Index = () => {
         ) : (
           <div className="flex gap-6 overflow-x-auto pb-4 snap-x snap-mandatory">
             {courses.map(course => (
-              <div
-                key={course.id}
-                className="flex-shrink-0 w-full max-w-2xl snap-start"
-              >
+              <div key={course.id} className="flex-shrink-0 w-full max-w-2xl snap-start">
                 <CourseSection
                   course={course}
                   onUpdateName={name => updateCourseName(course.id, name)}
                   onDelete={() => deleteCourse(course.id)}
                   onAddComponent={() => addComponent(course.id)}
-                  onDeleteComponent={componentId =>
-                    deleteComponent(course.id, componentId)
-                  }
+                  onDeleteComponent={componentId => deleteComponent(course.id, componentId)}
                   onUpdateComponent={(componentId, updates) =>
                     updateComponent(course.id, componentId, updates)
                   }
-                  onAddSubComponent={componentId =>
-                    addSubComponent(course.id, componentId)
-                  }
+                  onAddSubComponent={componentId => addSubComponent(course.id, componentId)}
                   onDeleteSubComponent={(componentId, subComponentId) =>
                     deleteSubComponent(course.id, componentId, subComponentId)
                   }
@@ -195,7 +98,6 @@ const Index = () => {
               </div>
             ))}
           </div>
-
         )}
       </main>
     </div>

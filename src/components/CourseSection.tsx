@@ -1,7 +1,8 @@
 import { Course, Component as ComponentType } from '@/types/grades';
 import { ComponentCard } from './ComponentCard';
 import { GradeDisplay } from './GradeDisplay';
-import { calculateCourseGrade, getTotalWeight } from '@/lib/gradeCalculations';
+import { areWeightsValid, calculateCourseGrade, getTotalWeight } from '@/lib/gradeCalculations';
+import { formatWeight } from '@/lib/gradeFormatting';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -36,7 +37,7 @@ export function CourseSection({
   onUpdateSubComponent,
 }: CourseSectionProps) {
   const totalWeight = getTotalWeight(course.components);
-  const weightsAreValid = totalWeight === 100;
+  const weightsAreValid = areWeightsValid(course.components);
   const courseGrade = weightsAreValid ? calculateCourseGrade(course.components) : null;
   const showWeightWarning = course.components.length > 0 && !weightsAreValid;
 
@@ -83,7 +84,7 @@ export function CourseSection({
           <Alert variant="destructive" className="bg-warning/10 border-warning">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertDescription className="text-sm text-foreground">
-              Component weights total {totalWeight.toFixed(1)}%. They should sum to 100%.
+              Component weights total {formatWeight(totalWeight)}%. They should sum to 100%.
             </AlertDescription>
           </Alert>
         )}

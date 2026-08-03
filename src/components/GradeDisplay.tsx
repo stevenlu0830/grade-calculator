@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { formatGrade, getGradeColor, getGradeBg, getLetterGrade } from '@/lib/gradeCalculations';
+import { formatGrade, getGradeBg, getGradeColor, getLetterGrade } from '@/lib/gradeFormatting';
 
 interface GradeDisplayProps {
   grade: number | null;

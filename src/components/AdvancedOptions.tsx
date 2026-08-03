@@ -1,4 +1,12 @@
-import { Component, AdvancedOption } from '@/types/grades';
+import { AdvancedOption, Component } from '@/types/grades';
+import {
+  DEFAULT_DOWNWEIGHT_COUNT,
+  DEFAULT_DOWNWEIGHT_PERCENT,
+  DEFAULT_DROP_LOWEST_COUNT,
+  advancedOptionUpdate,
+  clampPercent,
+  getActiveAdvancedOption,
+} from '@/lib/gradePolicies';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -15,39 +23,11 @@ interface AdvancedOptionsProps {
 }
 
 export function AdvancedOptions({ component, onUpdate }: AdvancedOptionsProps) {
-  const activeOption: AdvancedOption =
-    component.dropLowestCount !== null
-      ? 'dropLowest'
-      : component.downweightLowestCount !== null
-      ? 'downweight'
-      : 'none';
+  const activeOption = getActiveAdvancedOption(component);
 
-  const handleDropLowestToggle = (enabled: boolean) => {
-    if (enabled) {
-      onUpdate({
-        dropLowestCount: 1,
-        downweightLowestCount: null,
-        downweightPercent: null,
-      });
-    } else {
-      onUpdate({ dropLowestCount: null });
-    }
-  };
-
-  const handleDownweightToggle = (enabled: boolean) => {
-    if (enabled) {
-      onUpdate({
-        downweightLowestCount: 1,
-        downweightPercent: 50,
-        dropLowestCount: null,
-      });
-    } else {
-      onUpdate({
-        downweightLowestCount: null,
-        downweightPercent: null,
-      });
-    }
-  };
+  // Turning a policy on clears the other; turning it off falls back to 'none'.
+  const toggleOption = (option: AdvancedOption) => (enabled: boolean) =>
+    onUpdate(advancedOptionUpdate(enabled ? option : 'none'));
 
   return (
     <div className="mt-4 pt-4 border-t border-border space-y-4">
@@ -60,7 +40,7 @@ export function AdvancedOptions({ component, onUpdate }: AdvancedOptionsProps) {
         <div className="flex items-center gap-2 min-w-[160px]">
           <Switch
             checked={activeOption === 'dropLowest'}
-            onCheckedChange={handleDropLowestToggle}
+            onCheckedChange={toggleOption('dropLowest')}
             disabled={activeOption === 'downweight'}
           />
           <Label className="text-sm font-medium flex items-center gap-1.5">
@@ -84,9 +64,11 @@ export function AdvancedOptions({ component, onUpdate }: AdvancedOptionsProps) {
             <Input
               type="number"
               min={1}
-              value={component.dropLowestCount ?? 1}
+              value={component.dropLowestCount ?? DEFAULT_DROP_LOWEST_COUNT}
               onChange={e =>
-                onUpdate({ dropLowestCount: parseInt(e.target.value) || 1 })
+                onUpdate({
+                  dropLowestCount: parseInt(e.target.value) || DEFAULT_DROP_LOWEST_COUNT,
+                })
               }
               className="w-16 h-8 text-center"
             />
@@ -100,7 +82,7 @@ export function AdvancedOptions({ component, onUpdate }: AdvancedOptionsProps) {
         <div className="flex items-center gap-2 min-w-[160px]">
           <Switch
             checked={activeOption === 'downweight'}
-            onCheckedChange={handleDownweightToggle}
+            onCheckedChange={toggleOption('downweight')}
             disabled={activeOption === 'dropLowest'}
           />
           <Label className="text-sm font-medium flex items-center gap-1.5">
@@ -124,10 +106,10 @@ export function AdvancedOptions({ component, onUpdate }: AdvancedOptionsProps) {
             <Input
               type="number"
               min={1}
-              value={component.downweightLowestCount ?? 1}
+              value={component.downweightLowestCount ?? DEFAULT_DOWNWEIGHT_COUNT}
               onChange={e =>
                 onUpdate({
-                  downweightLowestCount: parseInt(e.target.value) || 1,
+                  downweightLowestCount: parseInt(e.target.value) || DEFAULT_DOWNWEIGHT_COUNT,
                 })
               }
               className="w-16 h-8 text-center"
@@ -137,14 +119,9 @@ export function AdvancedOptions({ component, onUpdate }: AdvancedOptionsProps) {
               type="number"
               min={0}
               max={100}
-              value={component.downweightPercent ?? 50}
+              value={component.downweightPercent ?? DEFAULT_DOWNWEIGHT_PERCENT}
               onChange={e =>
-                onUpdate({
-                  downweightPercent: Math.min(
-                    100,
-                    Math.max(0, parseInt(e.target.value) || 0)
-                  ),
-                })
+                onUpdate({ downweightPercent: clampPercent(parseInt(e.target.value) || 0) })
               }
               className="w-16 h-8 text-center"
             />

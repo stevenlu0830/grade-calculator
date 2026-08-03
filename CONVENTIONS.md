@@ -29,13 +29,28 @@
 - Nullable reads use `??`, not `||`, so a real `0` survives: `component.weight ?? ''`.
 - Persistence is implicit — the store's `useEffect` autosaves. Never write `localStorage` from a component.
 
+## Layering
+
+Dependencies point one way; keep them that way.
+
+```
+pages / components  →  hooks  →  lib  →  types
+```
+
+- `src/lib/*` never imports React. If a helper needs a hook, it belongs in `src/hooks/`.
+- **Domain** (`gradeCalculations`, `gradePolicies`) must not know about Tailwind, the DOM, or display strings.
+- **Presentation** (`gradeFormatting`) may import domain. Never the reverse.
+- Side effects live at the edges: `courseStorage` owns `localStorage`, `download` owns the DOM. Nothing else touches either.
+- Split every export into a pure builder plus a thin effectful wrapper (`buildCoursesCsv` / `exportToCSV`). Assert the builder in tests; keep the wrapper too small to break.
+
 ## Grade logic
 
-- All math lives in `src/lib/gradeCalculations.ts` as pure functions. No calculation inline in JSX.
+- All maths lives in `src/lib/gradeCalculations.ts` and `src/lib/gradePolicies.ts` as pure functions. No calculation inline in JSX.
 - Functions returning a grade return `number | null`; `null` propagates rather than defaulting to 0.
-- Clamp to `[0, 100]` at every ingest boundary — store `updateSubComponent` and `parseCSV` both do it.
-- Never render a raw number: pass through `formatGrade`/`GradeDisplay` so `—` and 1-dp formatting stay consistent.
-- Course-level totals are gated on `getTotalWeight(...) === 100` by the caller, not by the calc function.
+- Clamp at ingest with `clampGrade` — never hand-roll `Math.min(100, Math.max(0, x))`.
+- Never render a raw number: go through `formatGrade`/`formatWeight`/`GradeDisplay`.
+- Gate course totals on `areWeightsValid(components)`. Never compare a weight sum with `===` — floating-point drift makes `0.01 + 64.04 + 35.95 !== 100`.
+- A rule the UI and the calculator both need (which policy is active, what a toggle clears) belongs in `gradePolicies`, not in a component.
 
 ## Styling
 
@@ -62,11 +77,19 @@
 - One feature component per file, named after the file.
 - Handlers `handle<Event>` inside components, `on<Event>` when crossing a prop boundary.
 
+## State & IDs
+
+- Mint IDs with `createId()` from `@/lib/id`. Never inline `Math.random()`.
+- Nested immutable updates go through the store's `mapCourse` / `mapComponent` helpers rather than hand-rolled nested `.map` chains.
+- `useGradeStore` takes its storage as an argument. Depend on the `CourseStorage` interface, not on `localStorage`.
+
 ## Tests
 
-- Vitest + jsdom, globals enabled — `describe`/`it`/`expect` need no import (the existing file imports them anyway; either is fine).
-- Location: `src/**/*.test.ts(x)`, colocated or under `src/test/`.
-- Prefer testing `src/lib/*` pure functions over rendering; `@testing-library/react` is available if you must.
+- Vitest + jsdom, globals enabled; the existing files import `describe`/`it`/`expect` explicitly — match that.
+- **All tests live in `src/test/`**, named `<module>.test.ts` after the module under test. Never colocate beside source.
+- Tests import through the `@/` alias (`@/lib/csvExport`), never with relative paths.
+- Test the pure functions; that's what the pure/effectful split is for. Components are currently untested.
+- Changing behaviour deliberately? Update the test in the same commit and say why in the message. A characterization test that starts failing is either a regression or a decision — never noise to silence.
 
 ## Commits
 
