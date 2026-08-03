@@ -46,21 +46,21 @@ Three-level tree; parent IDs denormalized onto children.
 - `Course` — `{ id, name, breakdowns }`
 - `Breakdown` — `{ id, courseId, name, weight, dropLowestCount, downweightLowestCount, downweightPercent, subBreakdownLabel, subBreakdowns }`
   - `subBreakdownLabel` is the singular noun used to auto-name rows ("Assignment" → "Assignment 3").
-- `SubBreakdown` — `{ id, breakdownId, name, achievedMarks: number | null, fullMarks: number }`
+- `SubBreakdown` — `{ id, breakdownId, name, achievedMarks: number | null, fullMarks: number | null }`
   - `achievedMarks` is **marks scored, not a percentage**. `null` = not entered, never 0.
-  - `fullMarks` defaults to 100, so a bare percentage still works.
+  - `fullMarks: number | null` — blank until entered; the row is excluded from totals until then. Never clamps `achievedMarks`, so bonus marks are allowed.
 - `AdvancedOption` — `'none' | 'dropLowest' | 'downweight'` (derived, never persisted).
 
 ## Domain — `src/lib/gradeCalculations.ts`
 
-- `clampPercentage(v)` — `[0, 100]`, for display/letter grades.
-- `clampAchievedMarks(v, fullMarks)` — `[0, fullMarks]`; the store's write guard.
-- `getEnteredMarks(subBreakdowns)` — scored rows only; skips rows worth 0 marks (can't divide by them).
+- `clampPercentage(v)` — `[0, 100]`, used **only** for picking a letter grade; a breakdown's own percentage is never clamped.
+- `getEnteredMarks(subBreakdowns)` — scored rows only; skips rows with no full marks yet and rows worth 0 marks (can't divide by them). Marks above full marks are kept.
+- **Precision:** full float64 throughout, no intermediate rounding. Rounding happens once, in `gradeFormatting`.
 - `calculateBreakdownGrade(breakdown)` — **total achieved / total available**, as a percentage. `null` if ungraded; single score bypasses policies; otherwise dispatches on `getActiveAdvancedOption`.
 - `calculateWeightedValue(breakdown)` — the breakdown's contribution in points.
 - `calculateCourseGrade(breakdowns)` — sums `calculateWeightedValue`; `null` if nothing qualifies. Does **not** validate weights.
 - `areWeightsValid(breakdowns)` — the single 100% gate, `1e-9` tolerance so float drift can't hide a valid grade. Used by `CourseSection` **and** `pdfExport`.
-- Constants: `PERCENTAGE_MIN/MAX`, `DEFAULT_FULL_MARKS`, `REQUIRED_TOTAL_WEIGHT`.
+- Constants: `PERCENTAGE_MIN/MAX`, `LEGACY_FULL_MARKS` (100, for reading v1 data and pre-`Full Marks` CSVs only), `REQUIRED_TOTAL_WEIGHT`.
 
 ## Policies — `src/lib/gradePolicies.ts`
 
@@ -83,7 +83,8 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ## Presentation — `src/lib/gradeFormatting.ts`
 
-- `formatGrade(grade)` — one decimal, or `—`.
+- `DISPLAY_DECIMALS` (2) — the single rounding point in the whole app.
+- `formatGrade(grade)` — rounded to `DISPLAY_DECIMALS`, or `—`.
 - `formatWeight(weight)` — up to 2 decimals, trailing zeros dropped, so a 99.99 shortfall doesn't render as "100.0".
 - `getLetterGrade(grade)` — UBC scale from the `LETTER_SCALE` table.
 - `getGradeColor` / `getGradeBg` — one `COLOUR_BANDS` table pairing text + background.
@@ -98,11 +99,11 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - `mapCourse` / `mapBreakdown` helpers keep nested immutable updates flat.
 - Actions: `addCourse(name)`, `deleteCourse`, `updateCourseName`, `addBreakdown(courseId, NewBreakdown)`, `deleteBreakdown`, `updateBreakdown`, `addSubBreakdown`, `deleteSubBreakdown`, `updateSubBreakdown`, `importCourses`.
 - Exports the `NewBreakdown` input type (`{ name, weight, subBreakdownLabel }`).
-- Invariants: a breakdown keeps ≥1 sub-breakdown; marks clamp on write, and **lowering `fullMarks` re-clamps `achievedMarks` with it**; new breakdowns seed one auto-named row.
+- Invariants: a breakdown keeps ≥1 sub-breakdown; **marks are stored verbatim with no clamping**; new breakdowns seed one auto-named row with both mark fields blank.
 
 ## Persistence & I/O seams
 
-- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface + `localCourseStorage`. Key `ubc-grade-calculator-data`, stored as `{ version, courses }` (`SCHEMA_VERSION = 2`). `migrate(raw)` converts bare v1 `components`/`grade` data, defaulting `fullMarks` to 100 so migrated courses compute identically.
+- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface + `localCourseStorage`. Key `ubc-grade-calculator-data`, stored as `{ version, courses }` (`SCHEMA_VERSION = 2`). `migrate(raw)` converts bare v1 `components`/`grade` data, defaulting `fullMarks` to `LEGACY_FULL_MARKS` so migrated courses compute identically (new rows start blank).
 - [src/lib/download.ts](src/lib/download.ts) — `downloadBlob`. The **only** place the app hands a file to the browser.
 - [src/lib/id.ts](src/lib/id.ts) — `createId()`, `crypto.randomUUID()` with a fallback.
 - [src/lib/exportFormat.ts](src/lib/exportFormat.ts) — `timestampedFilename`, `firstRowOnly` (the blank-repeat-parent convention both exports share).
@@ -123,7 +124,7 @@ Presentational; state arrives as props. None read the store.
 - [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) (80) — name, `achieved / full` mark inputs, and the row's own percentage.
 - [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) (128) — two switches, driven entirely by `gradePolicies`. Holds no rules of its own.
 - [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx) (74) — prompts for a course name; Add disabled while blank.
-- [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) (127) — preset picker + "Others (Specify)" free text + weight.
+- [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) (127) — preset picker + "Others (Specify)" free text + weight, in a `<form>` so Return submits. Caps the dropdown with `max-h-56`.
 - [NumberInput.tsx](src/components/NumberInput.tsx) (26) — `<Input type="number">` that blurs on wheel so scrolling can't rewrite a mark. **Use this for every numeric field.**
 - [GradeDisplay.tsx](src/components/GradeDisplay.tsx) (43) — the only grade-rendering surface.
 - [CourseToolbar.tsx](src/components/CourseToolbar.tsx) (63) — header import/export/new-course actions and their toasts.
@@ -139,7 +140,8 @@ Presentational; state arrives as props. None read the store.
 
 ## UI kit — `src/components/ui/` (48 files)
 
-Unmodified shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
+shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
+⚠️ One deliberate local fix: [select.tsx](src/components/ui/select.tsx) caps `SelectContent`/Viewport to `--radix-select-content-available-height` and lets the viewport scroll. Upstream's fixed viewport height let long option lists run off screen. Re-running `shadcn add select` reverts it.
 14 are imported by app code (`alert`, `button`, `card`, `collapsible`, `dialog`, `dropdown-menu`, `input`, `label`, `select`, `sonner`, `switch`, `toast`, `toaster`, `tooltip`), 4 more only by other `ui/` files, and **30 are unused**.
 → Per-file explanations, plus `public/`, in [UI_GUIDE.md](UI_GUIDE.md).
 
@@ -149,7 +151,7 @@ Unmodified shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via C
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 
-## Tests — `src/test/`, 163 across 8 files
+## Tests — `src/test/`, 172 across 8 files
 
 All tests live here, one file per module, importing via `@/lib/...`:
 [gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [csvExport](src/test/csvExport.test.ts) (round trip) · [csvImport](src/test/csvImport.test.ts) (incl. legacy headers) · [pdfExport](src/test/pdfExport.test.ts).

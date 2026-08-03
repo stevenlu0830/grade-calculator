@@ -5,14 +5,13 @@ import {
   calculateBreakdownGrade,
   calculateCourseGrade,
   calculateWeightedValue,
-  clampAchievedMarks,
   clampPercentage,
   getEnteredMarks,
   getTotalWeight,
 } from '@/lib/gradeCalculations';
 
-/** A mark entry: `[achieved, full]`, or `[null, full]` for an ungraded row. */
-type Entry = [number | null, number];
+/** A mark entry: `[achieved, full]`; either side may be `null` for a blank field. */
+type Entry = [number | null, number | null];
 
 const makeBreakdown = (entries: Entry[], overrides: Partial<Breakdown> = {}): Breakdown => {
   const subBreakdowns: SubBreakdown[] = entries.map(([achievedMarks, fullMarks], i) => ({
@@ -345,20 +344,78 @@ describe('areWeightsValid', () => {
   });
 });
 
-describe('clamping', () => {
+describe('clampPercentage', () => {
   it('constrains a percentage to 0-100', () => {
     expect(clampPercentage(-5)).toBe(0);
     expect(clampPercentage(42)).toBe(42);
     expect(clampPercentage(150)).toBe(100);
   });
+});
 
-  it('constrains achieved marks to the marks available', () => {
-    expect(clampAchievedMarks(-5, 20)).toBe(0);
-    expect(clampAchievedMarks(18, 20)).toBe(18);
-    expect(clampAchievedMarks(30, 20)).toBe(20);
+describe('marks are never corrected', () => {
+  it('lets a bonus score exceed full marks, and the grade exceed 100%', () => {
+    // Unrounded, so this is 110.00000000000001 — the raw double, not a tidied 110.
+    expect(calculateBreakdownGrade(makeBreakdown([[22, 20]]))).toBeCloseTo(110, 10);
+    expect(calculateBreakdownGrade(makeBreakdown([[22, 20]]))).toBeGreaterThan(100);
   });
 
-  it('allows marks above 100 when the paper is worth more', () => {
-    expect(clampAchievedMarks(130, 150)).toBe(130);
+  it('carries a bonus through to the course grade', () => {
+    const breakdowns = [makeBreakdown([[22, 20]], { weight: 100 })];
+    expect(calculateCourseGrade(breakdowns)).toBeCloseTo(110, 10);
+  });
+
+  it('still reports A+ for an over-100% grade', () => {
+    // The letter scale clamps; the percentage itself does not.
+    expect(clampPercentage(110)).toBe(100);
+  });
+});
+
+describe('precision', () => {
+  // Nothing is rounded until display, so results must retain far more than the
+  // 6 decimal places required.
+  it('keeps a repeating result precise well past 6 decimal places', () => {
+    const grade = calculateBreakdownGrade(makeBreakdown([[1, 3]])) as number;
+    expect(grade).toBeCloseTo(33.333333333333336, 10);
+    expect(grade.toFixed(6)).toBe('33.333333');
+  });
+
+  it('does not round intermediate sums before dividing', () => {
+    // 1/3 + 1/3 + 1/3 of a mark: rounding any step would drift off 100%.
+    const grade = calculateBreakdownGrade(
+      makeBreakdown([
+        [1 / 3, 1 / 3],
+        [1 / 3, 1 / 3],
+        [1 / 3, 1 / 3],
+      ])
+    ) as number;
+    expect(grade).toBeCloseTo(100, 10);
+  });
+
+  it('keeps weighted contributions precise', () => {
+    const breakdowns = [
+      makeBreakdown([[1, 3]], { weight: 1 / 3 }),
+      makeBreakdown([[2, 3]], { weight: 100 - 1 / 3 }),
+    ];
+    const grade = calculateCourseGrade(breakdowns) as number;
+    // (100/3 × (1/3)/100) + (200/3 × (299.666…)/100)
+    expect(grade).toBeCloseTo(66.55555555555556, 8);
+  });
+});
+
+describe('unset full marks', () => {
+  it('excludes a row with no full marks from the total', () => {
+    const breakdown = makeBreakdown([
+      [18, 20],
+      [5, null],
+    ]);
+    expect(calculateBreakdownGrade(breakdown)).toBe(90);
+  });
+
+  it('returns null when no row has full marks yet', () => {
+    expect(calculateBreakdownGrade(makeBreakdown([[5, null]]))).toBeNull();
+  });
+
+  it('reports no entered marks for a blank row', () => {
+    expect(getEnteredMarks(makeBreakdown([[null, null]]).subBreakdowns)).toEqual([]);
   });
 });

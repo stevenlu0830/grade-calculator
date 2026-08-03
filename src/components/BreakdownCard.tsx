@@ -3,6 +3,7 @@ import { SubBreakdownRow } from './SubBreakdownRow';
 import { AdvancedOptions } from './AdvancedOptions';
 import { GradeDisplay } from './GradeDisplay';
 import { calculateBreakdownGrade, calculateWeightedValue } from '@/lib/gradeCalculations';
+import { formatGrade } from '@/lib/gradeFormatting';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -79,7 +80,7 @@ export function BreakdownCard({
               <div className="flex items-center gap-1 min-w-[60px]">
                 <span className="text-xs text-muted-foreground">Weighted:</span>
                 <span className="text-sm font-mono font-medium">
-                  {weightedValue !== null ? weightedValue.toFixed(1) : '—'}
+                  {formatGrade(weightedValue)}
                 </span>
               </div>
               <Button

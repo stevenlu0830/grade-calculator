@@ -5,6 +5,7 @@ import { CourseSection } from '@/components/CourseSection';
 import { CourseToolbar } from '@/components/CourseToolbar';
 import { NewCourseDialog } from '@/components/NewCourseDialog';
 import { Button } from '@/components/ui/button';
+import { DISPLAY_DECIMALS } from '@/lib/gradeFormatting';
 import { GraduationCap, Plus, Upload } from 'lucide-react';
 
 const Index = () => {
@@ -60,6 +61,13 @@ const Index = () => {
               onAddCourse={() => setNewCourseOpen(true)}
             />
           </div>
+
+          {/* Grades are computed at full precision and rounded only here, so a
+              column of displayed figures may not visibly add up. */}
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            Numbers shown in this UI are rounded to {DISPLAY_DECIMALS} decimal places and may not
+            sum up to 100%. Calculations use the full unrounded values.
+          </p>
         </div>
       </header>
 

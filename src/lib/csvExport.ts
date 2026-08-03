@@ -57,8 +57,8 @@ function courseRows(course: Course): string[][] {
     return breakdown.subBreakdowns.map((subBreakdown, index) => [
       ...breakdownCells(course, breakdown, index),
       subBreakdown.name,
-      subBreakdown.achievedMarks !== null ? subBreakdown.achievedMarks.toString() : '',
-      subBreakdown.fullMarks.toString(),
+      optional(subBreakdown.achievedMarks),
+      optional(subBreakdown.fullMarks),
     ]);
   });
 }

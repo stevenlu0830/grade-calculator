@@ -112,9 +112,17 @@ describe('parseCSV', () => {
     });
   });
 
-  it('clamps marks to the marks available', () => {
-    const [course] = parseCSV(csv('C,A,10,,,,Over,150,20', ',,,,,,Under,-30,20'));
-    expect(course.breakdowns[0].subBreakdowns.map(s => s.achievedMarks)).toEqual([20, 0]);
+  it('imports marks verbatim, without correcting them', () => {
+    const [course] = parseCSV(csv('C,A,10,,,,Bonus,25,20', ',,,,,,Negative,-30,20'));
+    expect(course.breakdowns[0].subBreakdowns.map(s => s.achievedMarks)).toEqual([25, -30]);
+  });
+
+  it('leaves blank full marks unset rather than defaulting to 100', () => {
+    const [course] = parseCSV(csv('C,A,10,,,,Unset,18,'));
+    expect(course.breakdowns[0].subBreakdowns[0]).toMatchObject({
+      achievedMarks: 18,
+      fullMarks: null,
+    });
   });
 
   it('treats blank marks as unentered rather than zero', () => {
@@ -125,7 +133,7 @@ describe('parseCSV', () => {
   it('gives a breakdown with no rows one auto-named sub-breakdown', () => {
     const [course] = parseCSV(csv('C,Labs,10,,,,,,'));
     expect(course.breakdowns[0].subBreakdowns).toMatchObject([
-      { name: 'Lab 1', achievedMarks: null, fullMarks: 100 },
+      { name: 'Lab 1', achievedMarks: null, fullMarks: null },
     ]);
   });
 

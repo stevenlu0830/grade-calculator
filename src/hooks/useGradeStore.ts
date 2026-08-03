@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Course, Breakdown, SubBreakdown } from '@/types/grades';
 import { CourseStorage, localCourseStorage } from '@/lib/courseStorage';
-import { DEFAULT_FULL_MARKS, clampAchievedMarks } from '@/lib/gradeCalculations';
 import { nextSubBreakdownName } from '@/lib/breakdownPresets';
 import { createId } from '@/lib/id';
 
@@ -17,7 +16,8 @@ const createSubBreakdown = (breakdownId: string, name: string): SubBreakdown => 
   breakdownId,
   name,
   achievedMarks: null,
-  fullMarks: DEFAULT_FULL_MARKS,
+  // Both blank: the student fills in what the item was out of.
+  fullMarks: null,
 });
 
 const createBreakdown = (courseId: string, input: NewBreakdown): Breakdown => {
@@ -156,8 +156,10 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
         mapCourse(prev, courseId, course =>
           mapBreakdown(course, breakdownId, breakdown => ({
             ...breakdown,
+            // Stored verbatim — marks are never corrected on the student's
+            // behalf, so a score above full marks is kept as a bonus.
             subBreakdowns: breakdown.subBreakdowns.map(sb =>
-              sb.id === subBreakdownId ? applySubBreakdownUpdate(sb, updates) : sb
+              sb.id === subBreakdownId ? { ...sb, ...updates } : sb
             ),
           }))
         )
@@ -185,23 +187,3 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
   };
 }
 
-/**
- * Marks are clamped on write so nothing out of range can enter the store.
- *
- * Lowering full marks re-clamps the achieved marks with it, so a 90/100 that
- * becomes "out of 50" lands on 50/50 rather than an impossible 90/50.
- */
-function applySubBreakdownUpdate(
-  subBreakdown: SubBreakdown,
-  updates: Partial<SubBreakdown>
-): SubBreakdown {
-  const merged = { ...subBreakdown, ...updates };
-  const fullMarks = Math.max(0, merged.fullMarks);
-
-  return {
-    ...merged,
-    fullMarks,
-    achievedMarks:
-      merged.achievedMarks === null ? null : clampAchievedMarks(merged.achievedMarks, fullMarks),
-  };
-}

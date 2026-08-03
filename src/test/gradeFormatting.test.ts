@@ -28,10 +28,17 @@ describe('formatGrade', () => {
     expect(formatGrade(null)).toBe('—');
   });
 
-  it('always shows one decimal place', () => {
-    expect(formatGrade(90)).toBe('90.0');
-    expect(formatGrade(82.34)).toBe('82.3');
-    expect(formatGrade(0)).toBe('0.0');
+  it('always shows two decimal places', () => {
+    expect(formatGrade(90)).toBe('90.00');
+    expect(formatGrade(82.3)).toBe('82.30');
+    expect(formatGrade(82.346)).toBe('82.35');
+    expect(formatGrade(82.344)).toBe('82.34');
+    expect(formatGrade(0)).toBe('0.00');
+  });
+
+  it('rounds only at display, keeping the underlying value intact', () => {
+    expect(formatGrade(100 / 3)).toBe('33.33');
+    expect(formatGrade(2 / 3 * 100)).toBe('66.67');
   });
 });
 

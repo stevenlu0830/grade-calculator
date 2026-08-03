@@ -20,23 +20,29 @@ export function SubBreakdownRow({
 }: SubBreakdownRowProps) {
   const { achievedMarks, fullMarks } = subBreakdown;
 
-  const handleAchievedChange = (value: string) => {
-    if (value === '') {
-      onUpdate({ achievedMarks: null });
-      return;
-    }
+  /** Blank clears the value; anything unparseable is ignored rather than corrected. */
+  const parseEntry = (value: string): number | null | undefined => {
+    if (value === '') return null;
     const parsed = parseFloat(value);
-    if (!isNaN(parsed)) onUpdate({ achievedMarks: parsed });
+    return isNaN(parsed) ? undefined : parsed;
+  };
+
+  const handleAchievedChange = (value: string) => {
+    const next = parseEntry(value);
+    if (next !== undefined) onUpdate({ achievedMarks: next });
   };
 
   const handleFullMarksChange = (value: string) => {
-    const parsed = parseFloat(value);
-    onUpdate({ fullMarks: isNaN(parsed) ? 0 : parsed });
+    const next = parseEntry(value);
+    if (next !== undefined) onUpdate({ fullMarks: next });
   };
 
-  // Shown so the marks-based total stays checkable at a glance.
+  // Shown so the marks-based total stays checkable at a glance. Can exceed 100%
+  // when bonus marks are awarded.
   const percentage =
-    achievedMarks !== null && fullMarks > 0 ? (achievedMarks / fullMarks) * 100 : null;
+    achievedMarks !== null && fullMarks !== null && fullMarks > 0
+      ? (achievedMarks / fullMarks) * 100
+      : null;
 
   return (
     <div className="flex items-center gap-3 py-2 px-3 rounded-md bg-secondary/50 animate-fade-in">
@@ -47,9 +53,8 @@ export function SubBreakdownRow({
         placeholder="Sub-breakdown name"
       />
       <div className="flex items-center gap-1.5">
+        {/* No `max`: a score above full marks is a valid bonus, not an error. */}
         <NumberInput
-          min={0}
-          max={fullMarks}
           value={achievedMarks ?? ''}
           onChange={e => handleAchievedChange(e.target.value)}
           className="w-20 h-8 text-sm text-center font-mono bg-card border-border"
@@ -58,10 +63,10 @@ export function SubBreakdownRow({
         />
         <span className="text-xs text-muted-foreground">/</span>
         <NumberInput
-          min={0}
-          value={fullMarks}
+          value={fullMarks ?? ''}
           onChange={e => handleFullMarksChange(e.target.value)}
           className="w-20 h-8 text-sm text-center font-mono bg-card border-border"
+          placeholder="—"
           aria-label="Full marks"
         />
       </div>

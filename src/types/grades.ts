@@ -4,8 +4,12 @@ export interface SubBreakdown {
   name: string;
   /** Marks the student scored. `null` means not yet entered — never treat as 0. */
   achievedMarks: number | null;
-  /** What this item was out of. Defaults to 100, so a bare percentage still works. */
-  fullMarks: number;
+  /**
+   * What this item was out of. `null` until the student fills it in; a row with
+   * no full marks can't contribute a score, so it's excluded from the totals.
+   * Marks are never clamped against it — bonus marks above full are allowed.
+   */
+  fullMarks: number | null;
 }
 
 export interface Breakdown {

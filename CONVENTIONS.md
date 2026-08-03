@@ -48,7 +48,8 @@ pages / components  →  hooks  →  lib  →  types
 - All maths lives in `src/lib/gradeCalculations.ts` and `src/lib/gradePolicies.ts` as pure functions. No calculation inline in JSX.
 - Functions returning a grade return `number | null`; `null` propagates rather than defaulting to 0.
 - A grade is **total marks achieved over total marks available**, never an average of percentages. Sum the marks; don't average the ratios.
-- `achievedMarks` is marks, not a percentage. Clamp at ingest with `clampAchievedMarks(value, fullMarks)` — never hand-roll `Math.min(100, Math.max(0, x))`, and never assume 100.
+- `achievedMarks` is marks, not a percentage, and it is **never clamped** — a score above full marks is a valid bonus. Don't add "helpful" correction on entry, on import, or when full marks change.
+- Calculate at full precision and round **only** at display, via `formatGrade`/`DISPLAY_DECIMALS`. Never round inside `gradeCalculations.ts` or `gradePolicies.ts`.
 - Never render a raw number: go through `formatGrade`/`formatWeight`/`GradeDisplay`.
 - Gate course totals on `areWeightsValid(breakdowns)`. Never compare a weight sum with `===` — floating-point drift makes `0.01 + 64.04 + 35.95 !== 100`.
 - A rule the UI and the calculator both need (which policy is active, what a toggle clears) belongs in `gradePolicies`, not in a component.
@@ -64,7 +65,8 @@ pages / components  →  hooks  →  lib  →  types
 
 ## UI kit
 
-- `src/components/ui/*` is vendored shadcn. Don't hand-edit — add via `npx shadcn@latest add <name>` and compose wrappers instead.
+- `src/components/ui/*` is vendored shadcn. Don't hand-edit — add via `npx shadcn@latest add <name>` and compose wrappers instead. The one exception is `select.tsx`, patched to stop long dropdowns overflowing the window; if you must patch another, comment why inline and note it in CODEBASE_INDEX.md, since the CLI will revert it.
+- Dialogs that create something wrap their fields in a `<form>` with a `type="submit"` confirm button, so Return works.
 - Toasts: `import { toast } from 'sonner'`. Use `toast.success` / `toast.error`. The shadcn `use-toast` hook is legacy — don't add usages.
 
 ## TypeScript

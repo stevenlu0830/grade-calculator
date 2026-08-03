@@ -11,6 +11,16 @@ import { clampPercentage } from '@/lib/gradeCalculations';
 export const NO_GRADE = '—';
 
 /**
+ * Decimal places shown in the UI.
+ *
+ * This is the *only* place grades get rounded — every calculation upstream runs
+ * at full double precision (see `gradeCalculations.ts`). Because each number is
+ * rounded independently for display, a column of them may not visibly add up to
+ * its total; the UI carries a note saying so.
+ */
+export const DISPLAY_DECIMALS = 2;
+
+/**
  * The UBC letter scale, highest band first. Deliberately distinct from the
  * colour bands below — an 82 reads "good" but grades as an A-.
  */
@@ -45,10 +55,10 @@ const bandFor = (grade: number | null) => {
   return COLOUR_BANDS.find(band => grade >= band.min) ?? FAILING_BAND;
 };
 
-/** A grade as a fixed one-decimal string, or an em dash if unentered. */
+/** A grade rounded to `DISPLAY_DECIMALS`, or an em dash if unentered. */
 export function formatGrade(grade: number | null): string {
   if (grade === null) return NO_GRADE;
-  return grade.toFixed(1);
+  return grade.toFixed(DISPLAY_DECIMALS);
 }
 
 /**

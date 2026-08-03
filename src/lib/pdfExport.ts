@@ -8,7 +8,7 @@ import {
   calculateWeightedValue,
   getTotalWeight,
 } from '@/lib/gradeCalculations';
-import { formatWeight, getLetterGrade } from '@/lib/gradeFormatting';
+import { formatGrade, formatWeight, getLetterGrade } from '@/lib/gradeFormatting';
 import { firstRowOnly, timestampedFilename } from '@/lib/exportFormat';
 
 /** Renders a printable grade report. */
@@ -36,8 +36,10 @@ const TABLE_HEADERS = [
   'Weighted Grade',
 ];
 
-const percent = (value: number | null, decimals = 0): string =>
-  value !== null ? `${value.toFixed(decimals)}%` : '-';
+const percent = (value: number | null): string =>
+  value !== null ? `${formatGrade(value)}%` : '-';
+
+const marks = (value: number | null): string => (value !== null ? value.toString() : '-');
 
 function describeAdvancedOptions(breakdown: Breakdown): string {
   if (breakdown.dropLowestCount && breakdown.dropLowestCount > 0) {
@@ -69,9 +71,9 @@ export function buildReportRows(course: Course): string[][] {
       firstRowOnly(index, breakdown.weight !== null ? `${breakdown.weight}%` : '-'),
       firstRowOnly(index, advancedOptions),
       sub.name,
-      sub.achievedMarks !== null ? `${sub.achievedMarks} / ${sub.fullMarks}` : `- / ${sub.fullMarks}`,
-      firstRowOnly(index, percent(grade, 1)),
-      firstRowOnly(index, percent(weightedGrade, 1)),
+      `${marks(sub.achievedMarks)} / ${marks(sub.fullMarks)}`,
+      firstRowOnly(index, percent(grade)),
+      firstRowOnly(index, percent(weightedGrade)),
     ]);
   });
 }
@@ -98,7 +100,7 @@ function renderCourse(doc: jsPDF, course: Course, startY: number): number {
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
     doc.text(
-      `Final Grade: ${courseGrade.toFixed(1)}% (${getLetterGrade(courseGrade)})`,
+      `Final Grade: ${formatGrade(courseGrade)}% (${getLetterGrade(courseGrade)})`,
       MARGIN_LEFT,
       y + 7
     );

@@ -1,5 +1,5 @@
 import { Breakdown, Course, SubBreakdown } from '@/types/grades';
-import { DEFAULT_FULL_MARKS } from '@/lib/gradeCalculations';
+import { LEGACY_FULL_MARKS } from '@/lib/gradeCalculations';
 import { createId } from '@/lib/id';
 
 /**
@@ -74,7 +74,7 @@ function migrateLegacy(courses: LegacyCourse[]): Course[] {
         breakdownId,
         name: sub.name ?? '',
         achievedMarks: sub.grade ?? null,
-        fullMarks: DEFAULT_FULL_MARKS,
+        fullMarks: LEGACY_FULL_MARKS,
       }));
 
       return {

@@ -12,13 +12,25 @@ import {
 /**
  * Pure grade arithmetic. Nothing here knows about React or how a grade is
  * displayed — see `gradeFormatting.ts` for that.
+ *
+ * **Precision.** Every value here is a full IEEE-754 double (~15–17 significant
+ * digits, far beyond the 6 decimal places required) and nothing is rounded at
+ * any intermediate step: marks are summed, then divided, then weighted, all at
+ * full precision. Rounding happens exactly once, at the display boundary in
+ * `gradeFormatting.ts`. Never round inside this module — doing so would compound
+ * error across a course's breakdowns.
  */
 
 export const PERCENTAGE_MIN = 0;
 export const PERCENTAGE_MAX = 100;
 
-/** What a sub-breakdown is out of unless the student says otherwise. */
-export const DEFAULT_FULL_MARKS = 100;
+/**
+ * What a mark was out of before full marks existed as a field.
+ *
+ * Only used when reading older data — version-1 saves and pre-`Full Marks` CSVs
+ * stored plain percentages, which are marks out of 100. New rows start blank.
+ */
+export const LEGACY_FULL_MARKS = 100;
 
 /** Breakdown weights must add up to this for a course to have a final grade. */
 export const REQUIRED_TOTAL_WEIGHT = 100;
@@ -34,26 +46,27 @@ export const REQUIRED_TOTAL_WEIGHT = 100;
  */
 const WEIGHT_TOLERANCE = 1e-9;
 
-/** Constrains a percentage to the valid `[0, 100]` range. */
+/**
+ * Constrains a percentage to `[0, 100]`.
+ *
+ * Used only for picking a letter grade — a breakdown's own percentage is never
+ * clamped, so bonus marks can legitimately push it past 100%.
+ */
 export function clampPercentage(value: number): number {
   return clamp(value, PERCENTAGE_MIN, PERCENTAGE_MAX);
-}
-
-/** Marks can't be negative, and you can't score more than the paper is worth. */
-export function clampAchievedMarks(value: number, fullMarks: number): number {
-  return clamp(value, 0, Math.max(0, fullMarks));
 }
 
 /**
  * The scored items among `subBreakdowns`.
  *
- * Skips anything ungraded, and anything out of zero marks — an item worth
- * nothing can't contribute a score and would only risk dividing by zero.
+ * Skips anything ungraded, anything with no full marks yet, and anything out of
+ * zero marks — none of those can contribute a score, and the last would divide
+ * by zero. Marks above full marks are kept as-is; that's a bonus, not an error.
  */
 export function getEnteredMarks(subBreakdowns: SubBreakdown[]): MarkPair[] {
   return subBreakdowns
-    .filter(sb => sb.achievedMarks !== null && sb.fullMarks > 0)
-    .map(sb => ({ achieved: sb.achievedMarks as number, full: sb.fullMarks }));
+    .filter(sb => sb.achievedMarks !== null && sb.fullMarks !== null && sb.fullMarks > 0)
+    .map(sb => ({ achieved: sb.achievedMarks as number, full: sb.fullMarks as number }));
 }
 
 /**

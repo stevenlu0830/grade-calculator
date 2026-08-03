@@ -1,5 +1,5 @@
 import { Breakdown, Course } from '@/types/grades';
-import { DEFAULT_FULL_MARKS, clampAchievedMarks } from '@/lib/gradeCalculations';
+import { LEGACY_FULL_MARKS } from '@/lib/gradeCalculations';
 import { presetFor } from '@/lib/breakdownPresets';
 import { createId } from '@/lib/id';
 import { CSV_HEADERS } from '@/lib/csvExport';
@@ -127,14 +127,17 @@ function ensureSubBreakdown(breakdown: Breakdown): void {
       breakdownId: breakdown.id,
       name: `${breakdown.subBreakdownLabel} 1`,
       achievedMarks: null,
-      fullMarks: DEFAULT_FULL_MARKS,
+      fullMarks: null,
     });
   }
 }
 
 export function parseCSV(csvText: string): Course[] {
   const lines = csvText.split('\n').map(parseLine);
+  const header = (lines[0] ?? []).map(h => (h ?? '').trim());
   const col = resolveColumns(lines[0] ?? []);
+  // Absent entirely (an older export) means percentages; present-but-blank means unset.
+  const hasFullMarksColumn = header.includes('Full Marks');
   const width = Math.max(lines[0]?.length ?? 0, CSV_HEADERS.length);
 
   const dataLines = lines.slice(1).filter(row => row.some(cell => cell !== ''));
@@ -165,15 +168,16 @@ export function parseCSV(csvText: string): Course[] {
 
     const subName = cell(col.subName);
     if (currentBreakdown && subName) {
-      const fullMarks = toFloat(cell(col.fullMarks)) ?? DEFAULT_FULL_MARKS;
-      const achieved = toFloat(cell(col.achievedMarks));
-
       currentBreakdown.subBreakdowns.push({
         id: createId(),
         breakdownId: currentBreakdown.id,
         name: subName,
-        achievedMarks: achieved === null ? null : clampAchievedMarks(achieved, fullMarks),
-        fullMarks: Math.max(0, fullMarks),
+        // Stored as written — the importer never corrects a student's marks.
+        achievedMarks: toFloat(cell(col.achievedMarks)),
+        fullMarks: hasFullMarksColumn
+          ? toFloat(cell(col.fullMarks))
+          : // A pre-`Full Marks` export stored percentages, i.e. marks out of 100.
+            LEGACY_FULL_MARKS,
       });
     }
   }

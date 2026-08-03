@@ -47,7 +47,8 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
     }
   };
 
-  const submit = () => {
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
     if (!canAdd) return;
     // A custom name is its own singular; presets carry an explicit one.
     onAdd({ name, weight: parsedWeight, subBreakdownLabel: presetFor(name).singular });
@@ -65,14 +66,16 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        {/* A form so Return submits from any field. */}
+        <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="breakdown-type">Breakdown</Label>
             <Select value={choice} onValueChange={setChoice}>
               <SelectTrigger id="breakdown-type">
                 <SelectValue placeholder="Select a breakdown" />
               </SelectTrigger>
-              <SelectContent>
+              {/* Kept short so the list scrolls internally instead of running off screen. */}
+              <SelectContent className="max-h-56">
                 {BREAKDOWN_PRESETS.map(preset => (
                   <SelectItem key={preset.label} value={preset.label}>
                     {preset.label}
@@ -101,22 +104,21 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
             <NumberInput
               id="breakdown-weight"
               min={0}
-              max={100}
               value={weight}
               onChange={event => setWeight(event.target.value)}
               placeholder="e.g. 30"
             />
           </div>
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => close(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={!canAdd}>
-            Add
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => close(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canAdd}>
+              Add
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

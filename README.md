@@ -26,7 +26,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Components | shadcn/ui over Radix | 48 vendored primitives, 14 in use |
 | PDF | `jspdf` + `jspdf-autotable` | |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | 163 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 172 tests in `src/test/`; React components untested |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template.
 
@@ -83,13 +83,15 @@ The exact shape persisted to `localStorage`:
 }
 ```
 
-Three things to notice:
+Things to notice:
 
-- **`achievedMarks` is marks, not a percentage** — 18 out of 20, not 90. `fullMarks` defaults to 100, so a student who only knows percentages can ignore it entirely.
+- **`achievedMarks` is marks, not a percentage** — 18 out of 20, not 90.
+- **Both mark fields start blank.** `fullMarks` is `number | null`; a row with no full marks yet can't produce a score, so it's excluded from the totals until filled in. (Legacy data is the exception — see §5.)
 - **`achievedMarks: null`** on Assignment 2 means entered-but-ungraded. It's excluded from the totals rather than counted as zero, and its 25 marks don't drag the denominator either.
+- **Marks are never corrected.** A score above full marks is a valid bonus and pushes the breakdown past 100%; nothing is clamped on entry, on import, or when full marks change.
 - **`subBreakdownLabel`** is the singular noun used to auto-name new rows ("Assignment" → "Assignment 3"). Stored rather than derived, because de-pluralising English by rule mangles Quizzes and WebWorks.
 
-**Nullability is semantic.** `achievedMarks` and `weight` are `number | null`, where `null` = "the user hasn't entered this." A `0` is a real, meaningful zero. This distinction drives the whole UI: `null` renders as `—`, propagates through calculations, and excludes a row from totals. Preserve it — reads use `??`, never `||`. (`fullMarks` is deliberately *not* nullable; every row is out of something, defaulting to 100.)
+**Nullability is semantic.** `achievedMarks`, `fullMarks` and `weight` are all `number | null`, where `null` = "the user hasn't entered this." A `0` is a real, meaningful zero. This distinction drives the whole UI: `null` renders as `—`, propagates through calculations, and excludes a row from totals. Preserve it — reads use `??`, never `||`.
 
 ## 5. State & persistence
 
@@ -99,7 +101,7 @@ Three things to notice:
 - A `useEffect` on `[courses]` writes the whole array back on every change — autosave is implicit and total; no component ever calls `localStorage` itself.
 - Persistence is injected, not imported: the hook takes a `CourseStorage` and defaults to `localCourseStorage`. Swapping in a server-backed or in-memory implementation touches no state logic. See [src/lib/courseStorage.ts](src/lib/courseStorage.ts).
 - Storage key: `ubc-grade-calculator-data`, written as `{ version, courses }` with `SCHEMA_VERSION = 2`. Read and write both degrade to console errors (private-mode and quota failures).
-- **Migration.** `migrate(raw)` in `courseStorage.ts` accepts either the current envelope or bare version-1 data (a `Course[]` using `components`/`subComponents`, where `grade` was a percentage). v1 rows are given `fullMarks: 100`, which makes them calculate to exactly the grade they did before; ids are preserved so nothing re-keys. Covered by [courseStorage.test.ts](src/test/courseStorage.test.ts).
+- **Migration.** `migrate(raw)` in `courseStorage.ts` accepts either the current envelope or bare version-1 data (a `Course[]` using `components`/`subComponents`, where `grade` was a percentage). v1 rows are given `LEGACY_FULL_MARKS` (100), which makes them calculate to exactly the grade they did before; ids are preserved so nothing re-keys. New rows created today start blank instead. Covered by [courseStorage.test.ts](src/test/courseStorage.test.ts).
 - IDs come from `createId()` in [src/lib/id.ts](src/lib/id.ts) — `crypto.randomUUID()`, with a `Math.random` fallback for non-DOM environments.
 - Nested updates go through the module-local `mapCourse` / `mapBreakdown` helpers, so each action stays a few lines rather than a four-deep `.map` pyramid.
 
@@ -107,8 +109,8 @@ Three things to notice:
 
 **Invariants enforced in the store (not the UI):**
 - A breakdown always keeps ≥1 sub-breakdown — `deleteSubBreakdown` silently no-ops on the last one.
-- Marks clamp to `[0, fullMarks]` on write, and **lowering `fullMarks` re-clamps `achievedMarks` with it** — a 90/100 that becomes "out of 50" lands on 50/50, not an impossible 90/50.
-- New breakdowns arrive with one auto-named sub-breakdown.
+- **Marks are stored verbatim.** There is no clamping on write: a 22/20 stays 22/20, and lowering full marks does not rewrite the score. Silently correcting a student's entry was worse than showing them a number over 100%.
+- New breakdowns arrive with one auto-named sub-breakdown, both mark fields blank.
 - `importCourses` replaces state wholesale; there is no merge path.
 
 **No undo, no history.** `deleteCourse` is immediate and unrecoverable. Worth knowing before adding more destructive actions.
@@ -143,6 +145,14 @@ Ranking is by percentage, not by raw marks lost: a 4/10 is dropped ahead of a 15
 - Letter grades (`getLetterGrade`): UBC scale — A+ ≥90, A ≥85, A- ≥80, B+ ≥76, B ≥72, B- ≥68, C+ ≥64, C ≥60, C- ≥55, D ≥50, F below.
 
 A grade of 82 therefore shows green ("good") and the letter `A-`. Don't "fix" one to match the other without asking.
+
+### Precision and rounding
+
+Every calculation runs at full IEEE-754 double precision — roughly 15–17 significant digits, well beyond the 6 decimal places required — and **nothing is rounded at any intermediate step**. Marks are summed, divided, then weighted, all unrounded.
+
+Rounding happens exactly once, at the display boundary: `formatGrade` in [gradeFormatting.ts](src/lib/gradeFormatting.ts) applies `DISPLAY_DECIMALS` (2). So a 1/3 shows as `33.33` while the underlying value is `33.33333333333333`, and that full value is what feeds the weighted total.
+
+Because each figure is rounded independently for display, a column of them can fail to visibly add up — 33.33 + 33.33 + 33.33 reads as 99.99. The header carries a standing note saying so. Never round inside `gradeCalculations.ts` to make the display tidy; that would compound error across a course.
 
 ### Worked example
 
@@ -188,7 +198,7 @@ main.tsx → App.tsx (providers + router)
 
 State flows down as props; mutations flow up as `on*` callbacks, with each level closing over its own ID so children stay ID-agnostic. Nothing below `Index` knows the store exists.
 
-**Creation goes through dialogs.** `New Course` and `Add Breakdown` no longer create a blank row inline — each opens a centred modal and only commits on submit, with the confirm button disabled until the form is valid. `AddBreakdownDialog` is rendered *inside* `CourseSection`, so each course owns its own instance and there's no question which course a submission belongs to. Its options come from `BREAKDOWN_PRESETS`; picking "Others (Specify)" reveals a free-text name field.
+**Creation goes through dialogs.** `New Course` and `Add Breakdown` no longer create a blank row inline — each opens a centred modal and only commits on submit, with the confirm button disabled until the form is valid. Both wrap their fields in a `<form>` with a `type="submit"` button, so Return submits from any field. `AddBreakdownDialog` is rendered *inside* `CourseSection`, so each course owns its own instance and there's no question which course a submission belongs to. Its options come from `BREAKDOWN_PRESETS`; picking "Others (Specify)" reveals a free-text name field.
 
 **Numeric inputs go through [NumberInput](src/components/NumberInput.tsx)**, never raw `<Input type="number">`. Browsers step a focused number input on wheel events, so scrolling the page over a field would silently rewrite a mark; `NumberInput` blurs on wheel instead, and `index.css` hides the spinner arrows. Use it for every new numeric field.
 
@@ -216,7 +226,8 @@ Parent columns are written **only on the first row of each group** and blank the
 **The parser is hand-rolled** (no papaparse) and runs in three steps — `parseLine` tokenises, `resolveColumns` maps headers, then the tree is assembled. It:
 - handles quoted fields and `""` escapes,
 - resolves each column against its current **and** legacy header name via `COLUMN_ALIASES`, so CSVs exported before the breakdown rename still import — a missing `Full Marks` column defaults to 100, which is what those percentages already meant,
-- pads short rows, clamps marks with `clampAchievedMarks`, and backfills an auto-named sub-breakdown where a breakdown would otherwise have none.
+- pads short rows and backfills an auto-named sub-breakdown where a breakdown would otherwise have none. Marks are imported verbatim — never clamped.
+- distinguishes a *missing* `Full Marks` column (an older export, so marks are percentages out of 100) from a *blank* cell (genuinely unset).
 
 An export → import round trip is covered by tests, including names containing commas and quotes.
 
@@ -232,11 +243,11 @@ Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
 2. **CSV newline handling** (§8) — a quoted field containing a line break tears across rows.
-3. **No component test coverage.** `src/lib/*` is well covered (163 tests); every React component is untested. The two dialogs and `AdvancedOptions` carry the most branching, and the dialogs' validation rules are currently only verified by hand.
+3. **No component test coverage.** `src/lib/*` is well covered (172 tests); every React component is untested. The two dialogs and `AdvancedOptions` carry the most branching, and the dialogs' Enter-to-submit and validation behaviour is currently only verified by hand.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
 6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. 30 shadcn primitives are also unused, though those tree-shake.
-7. **`fullMarks: 0` is representable.** The UI lets a row be worth zero marks; the calculator skips such rows rather than dividing by zero, but nothing stops a student typing it and wondering why the row is ignored.
+7. **A row worth 0 marks is silently ignored.** `fullMarks: 0` is representable; the calculator skips such rows rather than dividing by zero, but nothing tells the student why the row stopped counting. Same for a row whose full marks are still blank.
 8. **No undo and no delete confirmation** on courses or breakdowns.
 9. **Prop drilling.** `CourseSectionProps` takes 9 props and forwards 6 it never uses. Deliberately left as-is: at three levels it stays readable and keeps components trivially testable. Revisit if a fourth level appears.
 
@@ -261,7 +272,9 @@ Ordered roughly by how likely each is to bite you.
 | Final grade shows `—` despite marks entered | Breakdown weights genuinely don't reach 100 — the warning shows the real total | [CourseSection.tsx](src/components/CourseSection.tsx), `areWeightsValid` |
 | Breakdown grade isn't the average of the row percentages | Working as designed — it's total marks over total available (§6). A 45/50 outweighs a 9/10 | `totalPercentage` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
 | A row shows a percentage but doesn't affect the grade | Its `fullMarks` is 0, so `getEnteredMarks` skips it | [gradeCalculations.ts](src/lib/gradeCalculations.ts), `getEnteredMarks` |
-| Marks silently dropped when lowering "out of" | By design — `achievedMarks` re-clamps to the new `fullMarks` | [useGradeStore.ts](src/hooks/useGradeStore.ts), `applySubBreakdownUpdate` |
+| A grade reads over 100% | By design — bonus marks are allowed and nothing is clamped | `getEnteredMarks` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
+| A row with marks entered doesn't count | Its full marks are still blank, or are 0 | `getEnteredMarks` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
+| Displayed figures don't add to 100% | Expected — each is rounded to 2 dp independently (§6) | `DISPLAY_DECIMALS` in [gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Scrolling the page changed a mark | A raw `<Input type="number">` slipped in instead of `NumberInput` | grep for `type="number"` outside [NumberInput.tsx](src/components/NumberInput.tsx) |
 | A mark of `0` is ignored | Somewhere used `||` instead of `??`, collapsing 0 to "unset" | grep for `\|\| ''` / `\|\| 0` |
 | Marks typed but breakdown still `—` | Non-numeric input never reached the store — `handleAchievedChange` drops `NaN` | [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) |
@@ -269,7 +282,8 @@ Ordered roughly by how likely each is to bite you.
 | Old saved data vanished after an update | `migrate` didn't recognise the shape — check the console and the `version` field | [courseStorage.ts](src/lib/courseStorage.ts), `migrate` |
 | CSV import produces garbled/extra rows | Quoted field contained a newline (§8) | [csvImport.ts](src/lib/csvImport.ts), the `split('\n')` |
 | CSV import silently loses a breakdown | Its row had a blank Breakdown Name, so it merged into the previous one | `parseCSV` carry-forward logic |
-| Old CSV imports with everything out of 100 | Correct — legacy files have no `Full Marks` column, so it defaults to 100 | `COLUMN_ALIASES` in [csvImport.ts](src/lib/csvImport.ts) |
+| Old CSV imports with everything out of 100 | Correct — legacy files have no `Full Marks` column, so it defaults to 100 | `hasFullMarksColumn` in [csvImport.ts](src/lib/csvImport.ts) |
+| A long dropdown runs off screen | `SelectContent` must stay capped to `--radix-select-content-available-height` | local fix in [select.tsx](src/components/ui/select.tsx) |
 | Breakdown added to the wrong course | Each `CourseSection` owns its own `AddBreakdownDialog`; suspect one hoisted to a shared parent | [CourseSection.tsx](src/components/CourseSection.tsx) |
 | New sub-breakdown name duplicates an existing one | `nextSubBreakdownName` continues past the highest number used; a renamed row won't match the pattern | [breakdownPresets.ts](src/lib/breakdownPresets.ts) |
 | Two parts of the UI disagree about state | A second `useGradeStore()` call created a rival store (§5) | grep `useGradeStore` — must appear once |
@@ -285,7 +299,7 @@ Terms are used consistently across code, UI, and CSV headers — keep it that wa
 - **Breakdown** — a weighted category within a course ("Assignments", "Final Exam"). Carries the weight and the optional grading policy. Formerly called a "component"; that word now means React component only.
 - **Sub-breakdown** — one graded item inside a breakdown ("Assignment 1", "Quiz 3"). Holds the marks achieved and the marks available.
 - **Marks achieved** (`achievedMarks`) — what the student scored, in marks. `null` until entered.
-- **Full marks** (`fullMarks`) — what the item was out of. Defaults to 100, so percentages still work unchanged.
+- **Full marks** (`fullMarks`) — what the item was out of. Blank until entered; a row without it is excluded from the totals. Legacy data defaults to 100 (`LEGACY_FULL_MARKS`).
 - **Weight** — a breakdown's percentage share of the course. Sub-breakdowns are never individually weighted; their marks are totalled, then the breakdown's weight applies once.
 - **Breakdown grade** — total marks achieved over total marks available within a breakdown, as a percentage, after any policy adjustment. *Not* an average of the row percentages.
 - **Weighted value / weighted grade** — `breakdownGrade × weight / 100`, i.e. the points a breakdown contributes to the course total. Shown as "Weighted:" in `BreakdownCard`.

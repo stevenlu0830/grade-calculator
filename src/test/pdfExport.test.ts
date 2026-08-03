@@ -34,15 +34,15 @@ describe('buildReportRows', () => {
   it('prints the parent columns only on the first row', () => {
     const [first, second, third] = buildReportRows(course);
 
-    // Drop lowest 1 removes 4/10, leaving 28/30 = 93.3%, weighted by 40% -> 37.3%
+    // Drop lowest 1 removes 4/10, leaving 28/30 = 93.33%, weighted by 40% -> 37.33%
     expect(first).toEqual([
       'Assignments',
       '40%',
       'Drop lowest 1',
       'Assignment 1',
       '4 / 10',
-      '93.3%',
-      '37.3%',
+      '93.33%',
+      '37.33%',
     ]);
     expect(second).toEqual(['', '', '', 'Assignment 2', '18 / 20', '', '']);
     expect(third).toEqual(['', '', '', 'Assignment 3', '10 / 10', '', '']);
