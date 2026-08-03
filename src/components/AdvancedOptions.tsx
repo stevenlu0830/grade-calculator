@@ -1,8 +1,9 @@
-import { AdvancedOption, Breakdown } from '@/types/grades';
+import { AdvancedOption } from '@/types/grades';
 import {
   DEFAULT_DOWNWEIGHT_COUNT,
   DEFAULT_DOWNWEIGHT_PERCENT,
   DEFAULT_DROP_LOWEST_COUNT,
+  GradingPolicy,
   advancedOptionUpdate,
   clampPercent,
   getActiveAdvancedOption,
@@ -14,23 +15,30 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { HelpCircle } from 'lucide-react';
 
 interface AdvancedOptionsProps {
-  breakdown: Breakdown;
-  onUpdate: (updates: Partial<Breakdown>) => void;
+  policy: GradingPolicy;
+  onChange: (policy: GradingPolicy) => void;
 }
 
-export function AdvancedOptions({ breakdown, onUpdate }: AdvancedOptionsProps) {
-  const activeOption = getActiveAdvancedOption(breakdown);
+/**
+ * The drop-lowest / downweight switches, as a controlled field group.
+ *
+ * Works on a bare `GradingPolicy` rather than a whole breakdown, so the same
+ * component drives the draft in "Add breakdown" and the draft in the advanced
+ * options dialog. It holds no rules of its own — everything comes from
+ * `gradePolicies`, which the calculator reads too.
+ */
+export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
+  const activeOption = getActiveAdvancedOption(policy);
 
   // Turning a policy on clears the other; turning it off falls back to 'none'.
   const toggleOption = (option: AdvancedOption) => (enabled: boolean) =>
-    onUpdate(advancedOptionUpdate(enabled ? option : 'none'));
+    onChange(advancedOptionUpdate(enabled ? option : 'none'));
+
+  const setField = (field: keyof GradingPolicy, value: number) =>
+    onChange({ ...policy, [field]: value });
 
   return (
-    <div className="mt-4 pt-4 border-t border-border space-y-4">
-      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        Advanced Options
-      </div>
-
+    <div className="space-y-4">
       {/* Drop Lowest */}
       <div className="flex items-start gap-4">
         <div className="flex items-center gap-2 min-w-[160px]">
@@ -38,6 +46,7 @@ export function AdvancedOptions({ breakdown, onUpdate }: AdvancedOptionsProps) {
             checked={activeOption === 'dropLowest'}
             onCheckedChange={toggleOption('dropLowest')}
             disabled={activeOption === 'downweight'}
+            aria-label="Drop lowest"
           />
           <Label className="text-sm font-medium flex items-center gap-1.5">
             Drop Lowest
@@ -60,13 +69,12 @@ export function AdvancedOptions({ breakdown, onUpdate }: AdvancedOptionsProps) {
             <Label className="text-sm text-muted-foreground">Drop</Label>
             <NumberInput
               min={1}
-              value={breakdown.dropLowestCount ?? DEFAULT_DROP_LOWEST_COUNT}
+              value={policy.dropLowestCount ?? DEFAULT_DROP_LOWEST_COUNT}
               onChange={e =>
-                onUpdate({
-                  dropLowestCount: parseInt(e.target.value) || DEFAULT_DROP_LOWEST_COUNT,
-                })
+                setField('dropLowestCount', parseInt(e.target.value) || DEFAULT_DROP_LOWEST_COUNT)
               }
               className="w-16 h-8 text-center"
+              aria-label="Number to drop"
             />
             <Label className="text-sm text-muted-foreground">lowest</Label>
           </div>
@@ -80,6 +88,7 @@ export function AdvancedOptions({ breakdown, onUpdate }: AdvancedOptionsProps) {
             checked={activeOption === 'downweight'}
             onCheckedChange={toggleOption('downweight')}
             disabled={activeOption === 'dropLowest'}
+            aria-label="Downweight lowest"
           />
           <Label className="text-sm font-medium flex items-center gap-1.5">
             Downweight
@@ -101,23 +110,26 @@ export function AdvancedOptions({ breakdown, onUpdate }: AdvancedOptionsProps) {
             <Label className="text-sm text-muted-foreground">Reduce</Label>
             <NumberInput
               min={1}
-              value={breakdown.downweightLowestCount ?? DEFAULT_DOWNWEIGHT_COUNT}
+              value={policy.downweightLowestCount ?? DEFAULT_DOWNWEIGHT_COUNT}
               onChange={e =>
-                onUpdate({
-                  downweightLowestCount: parseInt(e.target.value) || DEFAULT_DOWNWEIGHT_COUNT,
-                })
+                setField(
+                  'downweightLowestCount',
+                  parseInt(e.target.value) || DEFAULT_DOWNWEIGHT_COUNT
+                )
               }
               className="w-16 h-8 text-center"
+              aria-label="Number to downweight"
             />
             <Label className="text-sm text-muted-foreground">lowest by</Label>
             <NumberInput
               min={0}
               max={100}
-              value={breakdown.downweightPercent ?? DEFAULT_DOWNWEIGHT_PERCENT}
+              value={policy.downweightPercent ?? DEFAULT_DOWNWEIGHT_PERCENT}
               onChange={e =>
-                onUpdate({ downweightPercent: clampPercent(parseInt(e.target.value) || 0) })
+                setField('downweightPercent', clampPercent(parseInt(e.target.value) || 0))
               }
               className="w-16 h-8 text-center"
+              aria-label="Downweight percentage"
             />
             <Label className="text-sm text-muted-foreground">%</Label>
           </div>

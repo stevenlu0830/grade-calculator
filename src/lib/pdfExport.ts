@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Breakdown, Course } from '@/types/grades';
+import { Course } from '@/types/grades';
 import {
   areWeightsValid,
   calculateBreakdownGrade,
@@ -9,6 +9,7 @@ import {
   getTotalWeight,
 } from '@/lib/gradeCalculations';
 import { formatGrade, formatWeight, getLetterGrade } from '@/lib/gradeFormatting';
+import { describePolicy } from '@/lib/gradePolicies';
 import { firstRowOnly, timestampedFilename } from '@/lib/exportFormat';
 
 /** Renders a printable grade report. */
@@ -41,21 +42,6 @@ const percent = (value: number | null): string =>
 
 const marks = (value: number | null): string => (value !== null ? value.toString() : '-');
 
-function describeAdvancedOptions(breakdown: Breakdown): string {
-  if (breakdown.dropLowestCount && breakdown.dropLowestCount > 0) {
-    return `Drop lowest ${breakdown.dropLowestCount}`;
-  }
-  if (
-    breakdown.downweightLowestCount &&
-    breakdown.downweightLowestCount > 0 &&
-    breakdown.downweightPercent &&
-    breakdown.downweightPercent > 0
-  ) {
-    return `Downweight lowest ${breakdown.downweightLowestCount} by ${breakdown.downweightPercent}%`;
-  }
-  return '-';
-}
-
 /**
  * One row per sub-breakdown, with the parent's columns printed only on the
  * first row of each group. Pure, so the report's contents can be asserted.
@@ -64,7 +50,7 @@ export function buildReportRows(course: Course): string[][] {
   return course.breakdowns.flatMap(breakdown => {
     const grade = calculateBreakdownGrade(breakdown);
     const weightedGrade = calculateWeightedValue(breakdown);
-    const advancedOptions = describeAdvancedOptions(breakdown);
+    const advancedOptions = describePolicy(breakdown) ?? '-';
 
     return breakdown.subBreakdowns.map((sub, index) => [
       firstRowOnly(index, breakdown.name),

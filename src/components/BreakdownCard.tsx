@@ -1,7 +1,8 @@
 import { Breakdown, SubBreakdown } from '@/types/grades';
 import { SubBreakdownRow } from './SubBreakdownRow';
-import { AdvancedOptions } from './AdvancedOptions';
+import { AdvancedOptionsDialog } from './AdvancedOptionsDialog';
 import { GradeDisplay } from './GradeDisplay';
+import { describePolicy } from '@/lib/gradePolicies';
 import { calculateBreakdownGrade, calculateWeightedValue } from '@/lib/gradeCalculations';
 import { formatGrade } from '@/lib/gradeFormatting';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -30,9 +31,10 @@ export function BreakdownCard({
   onDeleteSubBreakdown,
 }: BreakdownCardProps) {
   const [isOpen, setIsOpen] = useState(true);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const grade = calculateBreakdownGrade(breakdown);
   const weightedValue = calculateWeightedValue(breakdown);
+  const activePolicy = describePolicy(breakdown);
 
   const handleWeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -119,18 +121,30 @@ export function BreakdownCard({
                 <Plus className="h-4 w-4 mr-1.5" />
                 Add Sub-breakdown
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                <Settings2 className="h-4 w-4 mr-1.5" />
-                {showAdvanced ? 'Hide Options' : 'Advanced'}
-              </Button>
+              <div className="flex items-center gap-2">
+                {/* Surfaced here because the options themselves now live in a
+                    modal — otherwise an active policy would be invisible. */}
+                {activePolicy && (
+                  <span className="text-xs text-muted-foreground">{activePolicy}</span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => setAdvancedOpen(true)}
+                >
+                  <Settings2 className="h-4 w-4 mr-1.5" />
+                  Advanced
+                </Button>
+              </div>
             </div>
 
-            {showAdvanced && <AdvancedOptions breakdown={breakdown} onUpdate={onUpdate} />}
+            <AdvancedOptionsDialog
+              open={advancedOpen}
+              onOpenChange={setAdvancedOpen}
+              policy={breakdown}
+              onApply={onUpdate}
+            />
           </CardContent>
         </CollapsibleContent>
       </Collapsible>

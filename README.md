@@ -26,7 +26,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Components | shadcn/ui over Radix | 48 vendored primitives, 14 in use |
 | PDF | `jspdf` + `jspdf-autotable` | |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | 172 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 194 tests in `src/test/`; React components untested |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template.
 
@@ -206,7 +206,14 @@ CSV file handling lives in [useCsvImport](src/hooks/useCsvImport.ts) — it owns
 
 **Layout:** courses render in a horizontal scroll-snap carousel (`overflow-x-auto snap-x snap-mandatory`), each capped at `max-w-2xl`. This is a deliberate choice from commit `d3347fb`, not a wrapping grid.
 
-**AdvancedOptions** holds no rules of its own. It reads `getActiveAdvancedOption(breakdown)` for the current mode and calls `advancedOptionUpdate(option)` to switch, so "drop wins over downweight" and "enabling one clears the other" are defined once in `gradePolicies` and shared with the calculator. Each switch is disabled while the other is active, and `AdvancedOption` is never persisted.
+**AdvancedOptions** holds no rules of its own. It's a controlled field group over a `GradingPolicy` — the three policy fields, which a `Breakdown` satisfies structurally. It reads `getActiveAdvancedOption(policy)` for the current mode and calls `advancedOptionUpdate(option)` to switch, so "drop wins over downweight" and "enabling one clears the other" are defined once in `gradePolicies` and shared with the calculator. Each switch is disabled while the other is active, and `AdvancedOption` is never persisted.
+
+Because it works on a bare policy, the same component serves two places:
+
+- **In "Add breakdown"**, inline behind a collapsed *Advanced options* section, so a policy can be set at creation. `NewBreakdown` extends `GradingPolicy` to carry it through.
+- **In the Advanced options modal**, opened from a breakdown's *Advanced* button. Edits go into a draft and only reach the breakdown on **Apply**, so a cancelled edit never moves the grade. The card shows `describePolicy(...)` beside the button, since the options are no longer visible inline.
+
+⚠️ The modal's draft is seeded at mount, in an inner component `key`ed on `open`. Two subtler approaches both broke: seeding from an effect that depends on `policy` reset an in-progress draft whenever anything else in the breakdown changed (`policy` is a new object every store update), and relying on Radix to unmount the content on close defers to an exit animation whose `animationend` may never fire. See the comment in [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) before changing it.
 
 ## 8. Import / export
 
@@ -243,7 +250,7 @@ Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
 2. **CSV newline handling** (§8) — a quoted field containing a line break tears across rows.
-3. **No component test coverage.** `src/lib/*` is well covered (172 tests); every React component is untested. The two dialogs and `AdvancedOptions` carry the most branching, and the dialogs' Enter-to-submit and validation behaviour is currently only verified by hand.
+3. **No component test coverage.** `src/lib/*` and the store hook are well covered (194 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
 6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. 30 shadcn primitives are also unused, though those tree-shake.
@@ -256,7 +263,7 @@ Ordered roughly by how likely each is to bite you.
 ## 10. Extension guide
 
 - **New grading policy** (e.g. "best N of M"): add fields to `Breakdown` in `types/grades.ts` → add the rule to `gradePolicies.ts` (an `applyBestOf` over `MarkPair[]`, a case in `getActiveAdvancedOption`, and one in `advancedOptionUpdate`) → add a `case` in `calculateBreakdownGrade`'s switch → add a switch to `AdvancedOptions` → add the columns to `CSV_HEADERS` and `COLUMN_ALIASES`. The switch is exhaustive over `AdvancedOption`, so TypeScript will point at every site you still need to touch.
-- **New breakdown type:** add an entry to `BREAKDOWN_PRESETS` in `breakdownPresets.ts` with its `singular`. The dialog and the CSV importer both read from there, so that's the only edit.
+- **New breakdown type:** add an entry to `BREAKDOWN_PRESETS` in `breakdownPresets.ts` with its `singular`, **in alphabetical position** — a test enforces the ordering. The dialog and the CSV importer both read from there, so that's the only edit.
 - **Changing the persisted shape:** bump `SCHEMA_VERSION`, extend `migrate` in `courseStorage.ts`, and add a test asserting old data still calculates the same. Saved data is the one thing here that can't be regenerated.
 - **New route:** add `<Route>` in `App.tsx` above the `*` catch-all, create the page in `src/pages/`.
 - **Deeper store access:** convert `useGradeStore` into a Context provider rather than calling the hook twice (§5).
@@ -306,5 +313,6 @@ Terms are used consistently across code, UI, and CSV headers — keep it that wa
 - **Drop lowest N** — exclude the N worst-scoring sub-breakdowns, ranked by percentage. Their full marks leave the total too. Always keeps ≥1.
 - **Downweight lowest N by P%** — scale the N worst-scoring sub-breakdowns' marks *and* full marks by `1 - P/100`.
 - **Advanced option** — the drop/downweight choice. Derived from field nullability at render time, never stored.
+- **Grading policy** (`GradingPolicy`) — the three policy fields on their own, so the same UI can edit a saved breakdown or a not-yet-created draft.
 - **Sub-breakdown label** (`subBreakdownLabel`) — the singular noun used to auto-name rows ("Assignment" → "Assignment 3").
 - **Grade band** — the 90/80/70/60 colour thresholds. Distinct from the UBC letter-grade scale (§6).

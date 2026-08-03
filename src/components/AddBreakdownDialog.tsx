@@ -14,11 +14,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NumberInput } from '@/components/NumberInput';
+import { AdvancedOptions } from '@/components/AdvancedOptions';
 import { BREAKDOWN_PRESETS, OTHER_BREAKDOWN, presetFor } from '@/lib/breakdownPresets';
+import { GradingPolicy, NO_POLICY, describePolicy } from '@/lib/gradePolicies';
+import { ChevronDown, Settings2 } from 'lucide-react';
 import type { NewBreakdown } from '@/hooks/useGradeStore';
 
 interface AddBreakdownDialogProps {
@@ -27,16 +31,19 @@ interface AddBreakdownDialogProps {
   onAdd: (breakdown: NewBreakdown) => void;
 }
 
-/** Picks a breakdown type and weight before the breakdown is created. */
+/** Picks a breakdown type, weight and optional grading policy before creation. */
 export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDialogProps) {
   const [choice, setChoice] = useState('');
   const [customName, setCustomName] = useState('');
   const [weight, setWeight] = useState('');
+  const [policy, setPolicy] = useState<GradingPolicy>(NO_POLICY);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const isOther = choice === OTHER_BREAKDOWN;
   const name = isOther ? customName.trim() : choice;
   const parsedWeight = weight === '' ? null : parseFloat(weight);
   const canAdd = name !== '' && parsedWeight !== null && !Number.isNaN(parsedWeight);
+  const activePolicy = describePolicy(policy);
 
   const close = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -44,6 +51,8 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
       setChoice('');
       setCustomName('');
       setWeight('');
+      setPolicy(NO_POLICY);
+      setAdvancedOpen(false);
     }
   };
 
@@ -51,7 +60,12 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
     event.preventDefault();
     if (!canAdd) return;
     // A custom name is its own singular; presets carry an explicit one.
-    onAdd({ name, weight: parsedWeight, subBreakdownLabel: presetFor(name).singular });
+    onAdd({
+      name,
+      weight: parsedWeight,
+      subBreakdownLabel: presetFor(name).singular,
+      ...policy,
+    });
     close(false);
   };
 
@@ -61,8 +75,8 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
         <DialogHeader>
           <DialogTitle>Add breakdown</DialogTitle>
           <DialogDescription>
-            Choose what this part of the course is, and how much it's worth. Both stay editable
-            afterwards.
+            Choose what this part of the course is, and how much it's worth. Everything stays
+            editable afterwards.
           </DialogDescription>
         </DialogHeader>
 
@@ -109,6 +123,34 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
               placeholder="e.g. 30"
             />
           </div>
+
+          {/* Collapsed by default — most breakdowns need no policy at all. */}
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <div className="flex items-center justify-between">
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="px-0 text-muted-foreground hover:bg-transparent"
+                >
+                  <Settings2 className="h-4 w-4 mr-1.5" />
+                  Advanced options
+                  <ChevronDown
+                    className={`h-4 w-4 ml-1.5 transition-transform ${
+                      advancedOpen ? '' : '-rotate-90'
+                    }`}
+                  />
+                </Button>
+              </CollapsibleTrigger>
+              {!advancedOpen && activePolicy && (
+                <span className="text-xs text-muted-foreground">{activePolicy}</span>
+              )}
+            </div>
+            <CollapsibleContent className="pt-3">
+              <AdvancedOptions policy={policy} onChange={setPolicy} />
+            </CollapsibleContent>
+          </Collapsible>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => close(false)}>

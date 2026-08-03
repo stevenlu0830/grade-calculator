@@ -66,8 +66,11 @@ Three-level tree; parent IDs denormalized onto children.
 
 Domain rules shared by the calculator and the toggle UI so they can't disagree. Operates on `MarkPair { achieved, full }`.
 
-- `getActiveAdvancedOption(breakdown)` — derives the mode from field nullability. Drop wins if both set.
-- `advancedOptionUpdate(option)` — the field changes that switch modes, clearing the replaced policy.
+- `GradingPolicy` — just the three policy fields. A `Breakdown` satisfies it structurally, so the same helpers serve a saved breakdown *and* the draft a dialog holds before commit.
+- `NO_POLICY` — frozen all-nulls starting point.
+- `getActiveAdvancedOption(policy)` — derives the mode from field nullability. Drop wins if both set.
+- `advancedOptionUpdate(option)` — the complete policy for a mode, clearing the one it replaces. Returns a fresh object, never `NO_POLICY` itself.
+- `describePolicy(policy)` — one-line summary, or `null`. Shared by the breakdown card and the PDF report.
 - `percentageOf` / `sortByPercentage` — ranking is **by percentage**, so 4/10 ranks below 15/20.
 - `totalPercentage(pairs)` — summed marks over summed availability; `null` if nothing available.
 - `applyDropLowest(sorted, count)` — drops N worst; their `full` leaves the denominator too. Keeps ≥1.
@@ -76,7 +79,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ## Presets — `src/lib/breakdownPresets.ts`
 
-- `BREAKDOWN_PRESETS` — the 11 offered types, each with an explicit `singular` (spelled out, because rules mangle Quizzes/WebWorks).
+- `BREAKDOWN_PRESETS` — the 11 offered types in **ascending alphabetical order, case-insensitively** (so iClickers sits before In-class Exercises, not after WebWorks); each carries an explicit `singular`, spelled out because rules mangle Quizzes/WebWorks. A test enforces the ordering.
 - `OTHER_BREAKDOWN` — sentinel for "Others (Specify)".
 - `presetFor(label)` — preset lookup; an unknown name is its own singular.
 - `nextSubBreakdownName(label, existingNames)` — `<label> <n>`, continuing past the highest number used so deletions don't cause collisions.
@@ -98,7 +101,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - **Not a Context.** Called once in `Index.tsx`; a second call would be a rival state tree racing the same key.
 - `mapCourse` / `mapBreakdown` helpers keep nested immutable updates flat.
 - Actions: `addCourse(name)`, `deleteCourse`, `updateCourseName`, `addBreakdown(courseId, NewBreakdown)`, `deleteBreakdown`, `updateBreakdown`, `addSubBreakdown`, `deleteSubBreakdown`, `updateSubBreakdown`, `importCourses`.
-- Exports the `NewBreakdown` input type (`{ name, weight, subBreakdownLabel }`).
+- Exports the `NewBreakdown` input type — `{ name, weight, subBreakdownLabel }` **extending `GradingPolicy`**, so the add dialog can set a policy up front.
 - Invariants: a breakdown keeps ≥1 sub-breakdown; **marks are stored verbatim with no clamping**; new breakdowns seed one auto-named row with both mark fields blank.
 
 ## Persistence & I/O seams
@@ -122,9 +125,10 @@ Presentational; state arrives as props. None read the store.
 - [CourseSection.tsx](src/components/CourseSection.tsx) (133) — one course. Gates the final grade on `areWeightsValid`; owns its own `AddBreakdownDialog` instance.
 - [BreakdownCard.tsx](src/components/BreakdownCard.tsx) (133) — one breakdown. Local UI state: `isOpen`, `showAdvanced`.
 - [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) (80) — name, `achieved / full` mark inputs, and the row's own percentage.
-- [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) (128) — two switches, driven entirely by `gradePolicies`. Holds no rules of its own.
+- [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) — the two switches as a **controlled field group** over a `GradingPolicy`. Used by both dialogs; holds no rules of its own.
+- [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) — modal wrapper with Cancel/Apply. Draft state lives in an inner component `key`ed on `open`, so it re-seeds on every open (see the comment there — two subtler approaches were both wrong).
 - [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx) (74) — prompts for a course name; Add disabled while blank.
-- [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) (127) — preset picker + "Others (Specify)" free text + weight, in a `<form>` so Return submits. Caps the dropdown with `max-h-56`.
+- [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) — preset picker + "Others (Specify)" free text + weight + a collapsed advanced-options section, in a `<form>` so Return submits. Caps the dropdown with `max-h-56`.
 - [NumberInput.tsx](src/components/NumberInput.tsx) (26) — `<Input type="number">` that blurs on wheel so scrolling can't rewrite a mark. **Use this for every numeric field.**
 - [GradeDisplay.tsx](src/components/GradeDisplay.tsx) (43) — the only grade-rendering surface.
 - [CourseToolbar.tsx](src/components/CourseToolbar.tsx) (63) — header import/export/new-course actions and their toasts.
@@ -151,11 +155,11 @@ shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 
-## Tests — `src/test/`, 172 across 8 files
+## Tests — `src/test/`, 194 across 9 files
 
 All tests live here, one file per module, importing via `@/lib/...`:
-[gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [csvExport](src/test/csvExport.test.ts) (round trip) · [csvImport](src/test/csvImport.test.ts) (incl. legacy headers) · [pdfExport](src/test/pdfExport.test.ts).
-[setup.ts](src/test/setup.ts) provides `jest-dom` + a `matchMedia` stub. Untested: React components.
+[gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [csvExport](src/test/csvExport.test.ts) (round trip) · [csvImport](src/test/csvImport.test.ts) (incl. legacy headers) · [pdfExport](src/test/pdfExport.test.ts) · [useGradeStore](src/test/useGradeStore.test.ts) (hook driven via `renderHook` with in-memory storage).
+[setup.ts](src/test/setup.ts) provides `jest-dom` + a `matchMedia` stub. Untested: React components (the store hook is now covered).
 
 ## Build & config
 

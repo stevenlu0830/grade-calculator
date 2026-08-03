@@ -1,4 +1,4 @@
-import { AdvancedOption, Breakdown } from '@/types/grades';
+import { AdvancedOption } from '@/types/grades';
 import { clamp } from '@/lib/utils';
 
 /**
@@ -14,6 +14,30 @@ export interface MarkPair {
   achieved: number;
   full: number;
 }
+
+/**
+ * Just the policy fields of a breakdown.
+ *
+ * A `Breakdown` satisfies this structurally, so the same helpers serve both a
+ * saved breakdown and the draft policy the add/edit dialogs hold before commit.
+ */
+export interface GradingPolicy {
+  dropLowestCount: number | null;
+  downweightLowestCount: number | null;
+  downweightPercent: number | null;
+}
+
+/**
+ * No policy applied — the starting point for a new breakdown.
+ *
+ * Frozen because it's a shared module-level value; callers that need something
+ * mutable should spread it.
+ */
+export const NO_POLICY: GradingPolicy = Object.freeze({
+  dropLowestCount: null,
+  downweightLowestCount: null,
+  downweightPercent: null,
+});
 
 export const DEFAULT_DROP_LOWEST_COUNT = 1;
 export const DEFAULT_DOWNWEIGHT_COUNT = 1;
@@ -33,17 +57,17 @@ export function clampPercent(value: number): number {
  * The two policies are mutually exclusive; drop wins if both are somehow set,
  * matching the precedence in `calculateBreakdownGrade`.
  */
-export function getActiveAdvancedOption(breakdown: Breakdown): AdvancedOption {
-  if (breakdown.dropLowestCount !== null) return 'dropLowest';
-  if (breakdown.downweightLowestCount !== null) return 'downweight';
+export function getActiveAdvancedOption(policy: GradingPolicy): AdvancedOption {
+  if (policy.dropLowestCount !== null) return 'dropLowest';
+  if (policy.downweightLowestCount !== null) return 'downweight';
   return 'none';
 }
 
 /**
- * The field changes that switch a breakdown to `option`, clearing whichever
- * policy it replaces. Keeps mutual exclusivity out of the toggle handlers.
+ * The complete policy for `option`, with whichever fields it replaces cleared.
+ * Keeps mutual exclusivity out of the toggle handlers.
  */
-export function advancedOptionUpdate(option: AdvancedOption): Partial<Breakdown> {
+export function advancedOptionUpdate(option: AdvancedOption): GradingPolicy {
   switch (option) {
     case 'dropLowest':
       return {
@@ -58,12 +82,27 @@ export function advancedOptionUpdate(option: AdvancedOption): Partial<Breakdown>
         downweightPercent: DEFAULT_DOWNWEIGHT_PERCENT,
       };
     case 'none':
-      return {
-        dropLowestCount: null,
-        downweightLowestCount: null,
-        downweightPercent: null,
-      };
+      // A fresh object, so callers can treat every result as their own.
+      return { ...NO_POLICY };
   }
+}
+
+/**
+ * A one-line summary of an active policy, or `null` when none applies.
+ *
+ * Shared by the breakdown card and the PDF report so the two always describe a
+ * policy the same way.
+ */
+export function describePolicy(policy: GradingPolicy): string | null {
+  const { dropLowestCount, downweightLowestCount, downweightPercent } = policy;
+
+  if (dropLowestCount && dropLowestCount > 0) {
+    return `Drop lowest ${dropLowestCount}`;
+  }
+  if (downweightLowestCount && downweightLowestCount > 0 && downweightPercent && downweightPercent > 0) {
+    return `Downweight lowest ${downweightLowestCount} by ${downweightPercent}%`;
+  }
+  return null;
 }
 
 /** A single item's score as a percentage, used only for ranking. */

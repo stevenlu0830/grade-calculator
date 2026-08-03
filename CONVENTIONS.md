@@ -67,6 +67,7 @@ pages / components  →  hooks  →  lib  →  types
 
 - `src/components/ui/*` is vendored shadcn. Don't hand-edit — add via `npx shadcn@latest add <name>` and compose wrappers instead. The one exception is `select.tsx`, patched to stop long dropdowns overflowing the window; if you must patch another, comment why inline and note it in CODEBASE_INDEX.md, since the CLI will revert it.
 - Dialogs that create something wrap their fields in a `<form>` with a `type="submit"` confirm button, so Return works.
+- A dialog that *edits* existing data holds a draft and commits on Apply, so Cancel truly discards. Seed the draft at mount in an inner component `key`ed on `open` — not from an effect depending on the data, and not by trusting Radix to unmount on close.
 - Toasts: `import { toast } from 'sonner'`. Use `toast.success` / `toast.error`. The shadcn `use-toast` hook is legacy — don't add usages.
 
 ## TypeScript

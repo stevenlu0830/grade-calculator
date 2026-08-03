@@ -6,20 +6,32 @@ import {
 } from '@/lib/breakdownPresets';
 
 describe('BREAKDOWN_PRESETS', () => {
-  it('offers every breakdown type the dialog advertises', () => {
+  it('offers every breakdown type the dialog advertises, A-Z', () => {
     expect(BREAKDOWN_PRESETS.map(p => p.label)).toEqual([
       'Assignments',
-      'Tests',
       'Final Exam',
-      'Quizzes',
-      'Midterms',
       'iClickers',
       'In-class Exercises',
-      'Tutorials',
-      'Project Phases',
-      'WebWorks',
       'Labs',
+      'Midterms',
+      'Project Phases',
+      'Quizzes',
+      'Tests',
+      'Tutorials',
+      'WebWorks',
     ]);
+  });
+
+  it('stays sorted case-insensitively as presets are added', () => {
+    const labels = BREAKDOWN_PRESETS.map(p => p.label);
+    const sorted = [...labels].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+    expect(labels).toEqual(sorted);
+  });
+
+  it('does not fall back to a raw ASCII sort, which would strand iClickers', () => {
+    // 'i' (105) > 'W' (87), so a naive sort would push iClickers to the end.
+    const labels = BREAKDOWN_PRESETS.map(p => p.label);
+    expect(labels.indexOf('iClickers')).toBeLessThan(labels.indexOf('WebWorks'));
   });
 
   it('gives each preset a singular that rule-based de-pluralising would get wrong', () => {

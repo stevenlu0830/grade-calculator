@@ -10,18 +10,24 @@ export interface BreakdownPreset {
   singular: string;
 }
 
+/**
+ * Kept in ascending alphabetical order, case-insensitively — so iClickers sits
+ * between Final Exam and In-class Exercises rather than after WebWorks, where a
+ * raw ASCII sort would put it. A test enforces this as presets are added.
+ * "Others (Specify)" is rendered last by the dialog, outside this list.
+ */
 export const BREAKDOWN_PRESETS: readonly BreakdownPreset[] = [
   { label: 'Assignments', singular: 'Assignment' },
-  { label: 'Tests', singular: 'Test' },
   { label: 'Final Exam', singular: 'Final Exam' },
-  { label: 'Quizzes', singular: 'Quiz' },
-  { label: 'Midterms', singular: 'Midterm' },
   { label: 'iClickers', singular: 'iClicker' },
   { label: 'In-class Exercises', singular: 'In-class Exercise' },
-  { label: 'Tutorials', singular: 'Tutorial' },
-  { label: 'Project Phases', singular: 'Project Phase' },
-  { label: 'WebWorks', singular: 'WebWork' },
   { label: 'Labs', singular: 'Lab' },
+  { label: 'Midterms', singular: 'Midterm' },
+  { label: 'Project Phases', singular: 'Project Phase' },
+  { label: 'Quizzes', singular: 'Quiz' },
+  { label: 'Tests', singular: 'Test' },
+  { label: 'Tutorials', singular: 'Tutorial' },
+  { label: 'WebWorks', singular: 'WebWork' },
 ] as const;
 
 /** Sentinel for the "Others (Specify)" choice, which takes a free-text name. */

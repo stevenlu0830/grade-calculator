@@ -5,10 +5,12 @@ import {
   DEFAULT_DOWNWEIGHT_PERCENT,
   DEFAULT_DROP_LOWEST_COUNT,
   MarkPair,
+  NO_POLICY,
   advancedOptionUpdate,
   applyDownweightLowest,
   applyDropLowest,
   clampPercent,
+  describePolicy,
   getActiveAdvancedOption,
   sortByPercentage,
   totalPercentage,
@@ -83,6 +85,58 @@ describe('advancedOptionUpdate', () => {
     for (const option of ['none', 'dropLowest', 'downweight'] as const) {
       expect(getActiveAdvancedOption(breakdown(advancedOptionUpdate(option)))).toBe(option);
     }
+  });
+
+  it('returns a fresh object each time, never the shared NO_POLICY', () => {
+    const first = advancedOptionUpdate('none');
+    const second = advancedOptionUpdate('none');
+    expect(first).not.toBe(NO_POLICY);
+    expect(first).not.toBe(second);
+
+    // Mutating a result must not corrupt the constant or the next caller.
+    first.dropLowestCount = 3;
+    expect(NO_POLICY.dropLowestCount).toBeNull();
+    expect(second.dropLowestCount).toBeNull();
+  });
+});
+
+describe('NO_POLICY', () => {
+  it('has no policy configured', () => {
+    expect(getActiveAdvancedOption(NO_POLICY)).toBe('none');
+  });
+
+  it('is frozen, since it is shared module state', () => {
+    expect(Object.isFrozen(NO_POLICY)).toBe(true);
+  });
+});
+
+describe('describePolicy', () => {
+  it('is null when no policy applies', () => {
+    expect(describePolicy(NO_POLICY)).toBeNull();
+  });
+
+  it('describes drop lowest', () => {
+    expect(describePolicy(advancedOptionUpdate('dropLowest'))).toBe('Drop lowest 1');
+    expect(describePolicy({ ...NO_POLICY, dropLowestCount: 3 })).toBe('Drop lowest 3');
+  });
+
+  it('describes downweight', () => {
+    expect(describePolicy(advancedOptionUpdate('downweight'))).toBe('Downweight lowest 1 by 50%');
+  });
+
+  it('is null for a zero count, which has no effect', () => {
+    expect(describePolicy({ ...NO_POLICY, dropLowestCount: 0 })).toBeNull();
+  });
+
+  it('is null for a downweight of 0%, which has no effect', () => {
+    expect(
+      describePolicy({ ...NO_POLICY, downweightLowestCount: 2, downweightPercent: 0 })
+    ).toBeNull();
+  });
+
+  it('prefers drop when both are set, matching the calculator', () => {
+    const both = { dropLowestCount: 1, downweightLowestCount: 2, downweightPercent: 50 };
+    expect(describePolicy(both)).toBe('Drop lowest 1');
   });
 });
 

@@ -2,10 +2,16 @@ import { useState, useCallback, useEffect } from 'react';
 import { Course, Breakdown, SubBreakdown } from '@/types/grades';
 import { CourseStorage, localCourseStorage } from '@/lib/courseStorage';
 import { nextSubBreakdownName } from '@/lib/breakdownPresets';
+import { GradingPolicy } from '@/lib/gradePolicies';
 import { createId } from '@/lib/id';
 
-/** What a newly added breakdown needs; everything else has a sensible default. */
-export interface NewBreakdown {
+/**
+ * What a newly added breakdown needs; everything else has a sensible default.
+ *
+ * Extends `GradingPolicy` so the add dialog can set drop/downweight up front
+ * rather than forcing a second trip through the advanced options.
+ */
+export interface NewBreakdown extends GradingPolicy {
   name: string;
   weight: number | null;
   subBreakdownLabel: string;
@@ -27,9 +33,9 @@ const createBreakdown = (courseId: string, input: NewBreakdown): Breakdown => {
     courseId,
     name: input.name,
     weight: input.weight,
-    dropLowestCount: null,
-    downweightLowestCount: null,
-    downweightPercent: null,
+    dropLowestCount: input.dropLowestCount,
+    downweightLowestCount: input.downweightLowestCount,
+    downweightPercent: input.downweightPercent,
     subBreakdownLabel: input.subBreakdownLabel,
     // Every breakdown starts with one row so there's somewhere to type a mark.
     subBreakdowns: [createSubBreakdown(breakdownId, `${input.subBreakdownLabel} 1`)],
