@@ -1,4 +1,4 @@
-import { clampGrade } from '@/lib/gradeCalculations';
+import { clampPercentage } from '@/lib/gradeCalculations';
 
 /**
  * How a grade is rendered: text, letter, and colour.
@@ -65,7 +65,7 @@ export function formatWeight(weight: number): string {
 /** A grade as a UBC letter, or an em dash if unentered. */
 export function getLetterGrade(grade: number | null): string {
   if (grade === null) return NO_GRADE;
-  const clamped = clampGrade(grade);
+  const clamped = clampPercentage(grade);
   return LETTER_SCALE.find(band => clamped >= band.min)?.letter ?? FAILING_LETTER;
 }
 

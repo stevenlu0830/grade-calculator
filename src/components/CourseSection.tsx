@@ -1,6 +1,8 @@
-import { Course, Component as ComponentType } from '@/types/grades';
-import { ComponentCard } from './ComponentCard';
+import { useState } from 'react';
+import { Breakdown, Course, SubBreakdown } from '@/types/grades';
+import { BreakdownCard } from './BreakdownCard';
 import { GradeDisplay } from './GradeDisplay';
+import { AddBreakdownDialog } from './AddBreakdownDialog';
 import { areWeightsValid, calculateCourseGrade, getTotalWeight } from '@/lib/gradeCalculations';
 import { formatWeight } from '@/lib/gradeFormatting';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -8,20 +10,21 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Trash2, AlertTriangle, GraduationCap } from 'lucide-react';
+import type { NewBreakdown } from '@/hooks/useGradeStore';
 
 interface CourseSectionProps {
   course: Course;
   onUpdateName: (name: string) => void;
   onDelete: () => void;
-  onAddComponent: () => void;
-  onDeleteComponent: (componentId: string) => void;
-  onUpdateComponent: (componentId: string, updates: Partial<ComponentType>) => void;
-  onAddSubComponent: (componentId: string) => void;
-  onDeleteSubComponent: (componentId: string, subComponentId: string) => void;
-  onUpdateSubComponent: (
-    componentId: string,
-    subComponentId: string,
-    updates: Partial<{ name: string; grade: number | null }>
+  onAddBreakdown: (breakdown: NewBreakdown) => void;
+  onDeleteBreakdown: (breakdownId: string) => void;
+  onUpdateBreakdown: (breakdownId: string, updates: Partial<Breakdown>) => void;
+  onAddSubBreakdown: (breakdownId: string) => void;
+  onDeleteSubBreakdown: (breakdownId: string, subBreakdownId: string) => void;
+  onUpdateSubBreakdown: (
+    breakdownId: string,
+    subBreakdownId: string,
+    updates: Partial<SubBreakdown>
   ) => void;
 }
 
@@ -29,20 +32,23 @@ export function CourseSection({
   course,
   onUpdateName,
   onDelete,
-  onAddComponent,
-  onDeleteComponent,
-  onUpdateComponent,
-  onAddSubComponent,
-  onDeleteSubComponent,
-  onUpdateSubComponent,
+  onAddBreakdown,
+  onDeleteBreakdown,
+  onUpdateBreakdown,
+  onAddSubBreakdown,
+  onDeleteSubBreakdown,
+  onUpdateSubBreakdown,
 }: CourseSectionProps) {
-  const totalWeight = getTotalWeight(course.components);
-  const weightsAreValid = areWeightsValid(course.components);
-  const courseGrade = weightsAreValid ? calculateCourseGrade(course.components) : null;
-  const showWeightWarning = course.components.length > 0 && !weightsAreValid;
+  const [addOpen, setAddOpen] = useState(false);
+  const totalWeight = getTotalWeight(course.breakdowns);
+  const weightsAreValid = areWeightsValid(course.breakdowns);
+  const courseGrade = weightsAreValid ? calculateCourseGrade(course.breakdowns) : null;
+  const showWeightWarning = course.breakdowns.length > 0 && !weightsAreValid;
 
   return (
     <Card className="border-border shadow-md overflow-hidden animate-fade-in">
+      <AddBreakdownDialog open={addOpen} onOpenChange={setAddOpen} onAdd={onAddBreakdown} />
+
       <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 border-b border-border">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -84,46 +90,44 @@ export function CourseSection({
           <Alert variant="destructive" className="bg-warning/10 border-warning">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <AlertDescription className="text-sm text-foreground">
-              Component weights total {formatWeight(totalWeight)}%. They should sum to 100%.
+              Breakdown weights total {formatWeight(totalWeight)}%. They should sum to 100%.
             </AlertDescription>
           </Alert>
         )}
 
-        {course.components.length === 0 ? (
+        {course.breakdowns.length === 0 ? (
           <div className="py-8 text-center text-muted-foreground">
-            <p className="mb-4">No components yet. Add one to get started.</p>
-            <Button onClick={onAddComponent}>
+            <p className="mb-4">No breakdowns yet. Add one to get started.</p>
+            <Button onClick={() => setAddOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              Add Component
+              Add Breakdown
             </Button>
           </div>
         ) : (
           <>
             <div className="space-y-4">
-              {course.components.map(component => (
-                <ComponentCard
-                  key={component.id}
-                  component={component}
-                  onUpdate={updates => onUpdateComponent(component.id, updates)}
-                  onDelete={() => onDeleteComponent(component.id)}
-                  onAddSubComponent={() => onAddSubComponent(component.id)}
-                  onUpdateSubComponent={(subId, updates) =>
-                    onUpdateSubComponent(component.id, subId, updates)
+              {course.breakdowns.map(breakdown => (
+                <BreakdownCard
+                  key={breakdown.id}
+                  breakdown={breakdown}
+                  onUpdate={updates => onUpdateBreakdown(breakdown.id, updates)}
+                  onDelete={() => onDeleteBreakdown(breakdown.id)}
+                  onAddSubBreakdown={() => onAddSubBreakdown(breakdown.id)}
+                  onUpdateSubBreakdown={(subId, updates) =>
+                    onUpdateSubBreakdown(breakdown.id, subId, updates)
                   }
-                  onDeleteSubComponent={subId =>
-                    onDeleteSubComponent(component.id, subId)
-                  }
+                  onDeleteSubBreakdown={subId => onDeleteSubBreakdown(breakdown.id, subId)}
                 />
               ))}
             </div>
 
             <Button
               variant="outline"
-              onClick={onAddComponent}
+              onClick={() => setAddOpen(true)}
               className="w-full border-dashed"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add Component
+              Add Breakdown
             </Button>
           </>
         )}

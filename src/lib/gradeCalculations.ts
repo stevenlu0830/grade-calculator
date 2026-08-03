@@ -1,9 +1,12 @@
-import { Component, SubComponent } from '@/types/grades';
+import { Breakdown, SubBreakdown } from '@/types/grades';
 import { clamp } from '@/lib/utils';
 import {
+  MarkPair,
   applyDownweightLowest,
   applyDropLowest,
   getActiveAdvancedOption,
+  sortByPercentage,
+  totalPercentage,
 } from '@/lib/gradePolicies';
 
 /**
@@ -11,10 +14,13 @@ import {
  * displayed — see `gradeFormatting.ts` for that.
  */
 
-export const GRADE_MIN = 0;
-export const GRADE_MAX = 100;
+export const PERCENTAGE_MIN = 0;
+export const PERCENTAGE_MAX = 100;
 
-/** Component weights must add up to this for a course to have a final grade. */
+/** What a sub-breakdown is out of unless the student says otherwise. */
+export const DEFAULT_FULL_MARKS = 100;
+
+/** Breakdown weights must add up to this for a course to have a final grade. */
 export const REQUIRED_TOTAL_WEIGHT = 100;
 
 /**
@@ -28,81 +34,91 @@ export const REQUIRED_TOTAL_WEIGHT = 100;
  */
 const WEIGHT_TOLERANCE = 1e-9;
 
-/** Constrains a grade to the valid `[0, 100]` range. */
-export function clampGrade(value: number): number {
-  return clamp(value, GRADE_MIN, GRADE_MAX);
+/** Constrains a percentage to the valid `[0, 100]` range. */
+export function clampPercentage(value: number): number {
+  return clamp(value, PERCENTAGE_MIN, PERCENTAGE_MAX);
 }
 
-/** The grades that have actually been entered; ungraded rows are excluded. */
-export function calculateSubComponentGrades(subComponents: SubComponent[]): number[] {
-  return subComponents
-    .filter(sc => sc.grade !== null)
-    .map(sc => sc.grade as number);
+/** Marks can't be negative, and you can't score more than the paper is worth. */
+export function clampAchievedMarks(value: number, fullMarks: number): number {
+  return clamp(value, 0, Math.max(0, fullMarks));
 }
 
 /**
- * A component's grade: the average of its entered sub-component grades, after
- * applying whichever advanced policy is active.
+ * The scored items among `subBreakdowns`.
  *
- * Returns `null` when nothing has been graded yet, so an empty component
+ * Skips anything ungraded, and anything out of zero marks — an item worth
+ * nothing can't contribute a score and would only risk dividing by zero.
+ */
+export function getEnteredMarks(subBreakdowns: SubBreakdown[]): MarkPair[] {
+  return subBreakdowns
+    .filter(sb => sb.achievedMarks !== null && sb.fullMarks > 0)
+    .map(sb => ({ achieved: sb.achievedMarks as number, full: sb.fullMarks }));
+}
+
+/**
+ * A breakdown's grade: total marks achieved over total marks available, as a
+ * percentage, after applying whichever advanced policy is active.
+ *
+ * Returns `null` when nothing has been graded yet, so an empty breakdown
  * propagates as "no grade" rather than as a zero.
  */
-export function calculateComponentGrade(component: Component): number | null {
-  const grades = calculateSubComponentGrades(component.subComponents);
+export function calculateBreakdownGrade(breakdown: Breakdown): number | null {
+  const pairs = getEnteredMarks(breakdown.subBreakdowns);
 
-  if (grades.length === 0) return null;
+  if (pairs.length === 0) return null;
 
-  // A single grade can be neither dropped nor meaningfully downweighted.
-  if (grades.length === 1) return grades[0];
+  // A single score can be neither dropped nor meaningfully downweighted.
+  if (pairs.length === 1) return totalPercentage(pairs);
 
-  const sortedGrades = [...grades].sort((a, b) => a - b);
+  const sorted = sortByPercentage(pairs);
 
-  switch (getActiveAdvancedOption(component)) {
+  switch (getActiveAdvancedOption(breakdown)) {
     case 'dropLowest':
-      return applyDropLowest(sortedGrades, component.dropLowestCount ?? 0);
+      return applyDropLowest(sorted, breakdown.dropLowestCount ?? 0);
     case 'downweight':
       return applyDownweightLowest(
-        sortedGrades,
-        component.downweightLowestCount ?? 0,
-        component.downweightPercent ?? 0
+        sorted,
+        breakdown.downweightLowestCount ?? 0,
+        breakdown.downweightPercent ?? 0
       );
     case 'none':
-      return sortedGrades.reduce((sum, g) => sum + g, 0) / sortedGrades.length;
+      return totalPercentage(sorted);
   }
 }
 
-/** The points a component contributes to its course total. */
-export function calculateWeightedValue(component: Component): number | null {
-  const componentGrade = calculateComponentGrade(component);
-  if (componentGrade === null || component.weight === null) return null;
-  return (componentGrade * component.weight) / 100;
+/** The points a breakdown contributes to its course total. */
+export function calculateWeightedValue(breakdown: Breakdown): number | null {
+  const grade = calculateBreakdownGrade(breakdown);
+  if (grade === null || breakdown.weight === null) return null;
+  return (grade * breakdown.weight) / 100;
 }
 
 /**
- * A course's grade: the sum of its components' weighted contributions.
+ * A course's grade: the sum of its breakdowns' weighted contributions.
  *
- * Components without a grade or without a weight are skipped, and the result is
+ * Breakdowns without a grade or without a weight are skipped, and the result is
  * `null` if none qualify. This does not check that the weights add up — callers
  * gate on `areWeightsValid` first.
  */
-export function calculateCourseGrade(components: Component[]): number | null {
-  let totalWeightedGrade = 0;
+export function calculateCourseGrade(breakdowns: Breakdown[]): number | null {
+  let total = 0;
   let hasAnyGrade = false;
 
-  for (const component of components) {
-    const weightedValue = calculateWeightedValue(component);
+  for (const breakdown of breakdowns) {
+    const weightedValue = calculateWeightedValue(breakdown);
     if (weightedValue !== null) {
-      totalWeightedGrade += weightedValue;
+      total += weightedValue;
       hasAnyGrade = true;
     }
   }
 
-  return hasAnyGrade ? totalWeightedGrade : null;
+  return hasAnyGrade ? total : null;
 }
 
-/** Sum of the component weights, counting an unset weight as zero. */
-export function getTotalWeight(components: Component[]): number {
-  return components.reduce((sum, c) => sum + (c.weight || 0), 0);
+/** Sum of the breakdown weights, counting an unset weight as zero. */
+export function getTotalWeight(breakdowns: Breakdown[]): number {
+  return breakdowns.reduce((sum, b) => sum + (b.weight || 0), 0);
 }
 
 /**
@@ -111,6 +127,6 @@ export function getTotalWeight(components: Component[]): number {
  * The single gate for showing a final grade — used by the course card and by
  * the PDF report so the two can never disagree.
  */
-export function areWeightsValid(components: Component[]): boolean {
-  return Math.abs(getTotalWeight(components) - REQUIRED_TOTAL_WEIGHT) < WEIGHT_TOLERANCE;
+export function areWeightsValid(breakdowns: Breakdown[]): boolean {
+  return Math.abs(getTotalWeight(breakdowns) - REQUIRED_TOTAL_WEIGHT) < WEIGHT_TOLERANCE;
 }

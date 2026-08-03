@@ -7,52 +7,72 @@ import { buildReportRows } from '@/lib/pdfExport';
 const course: Course = {
   id: 'course-1',
   name: 'CPSC 121',
-  components: [
+  breakdowns: [
     {
-      id: 'comp-1',
+      id: 'b-1',
       courseId: 'course-1',
       name: 'Assignments',
       weight: 40,
       dropLowestCount: 1,
       downweightLowestCount: null,
       downweightPercent: null,
-      subComponents: [
-        { id: 's1', componentId: 'comp-1', name: 'A1', grade: 60 },
-        { id: 's2', componentId: 'comp-1', name: 'A2', grade: 80 },
-        { id: 's3', componentId: 'comp-1', name: 'A3', grade: 100 },
+      subBreakdownLabel: 'Assignment',
+      subBreakdowns: [
+        { id: 's1', breakdownId: 'b-1', name: 'Assignment 1', achievedMarks: 4, fullMarks: 10 },
+        { id: 's2', breakdownId: 'b-1', name: 'Assignment 2', achievedMarks: 18, fullMarks: 20 },
+        { id: 's3', breakdownId: 'b-1', name: 'Assignment 3', achievedMarks: 10, fullMarks: 10 },
       ],
     },
   ],
 };
 
 describe('buildReportRows', () => {
-  it('emits one row per sub-component', () => {
+  it('emits one row per sub-breakdown', () => {
     expect(buildReportRows(course)).toHaveLength(3);
   });
 
   it('prints the parent columns only on the first row', () => {
     const [first, second, third] = buildReportRows(course);
 
-    // Drop lowest 1 of [60,80,100] -> 90, weighted by 40% -> 36.0
+    // Drop lowest 1 removes 4/10, leaving 28/30 = 93.3%, weighted by 40% -> 37.3%
     expect(first).toEqual([
       'Assignments',
       '40%',
       'Drop lowest 1',
-      'A1',
-      '60%',
-      '90.0%',
-      '36.0%',
+      'Assignment 1',
+      '4 / 10',
+      '93.3%',
+      '37.3%',
     ]);
-    expect(second).toEqual(['', '', '', 'A2', '80%', '', '']);
-    expect(third).toEqual(['', '', '', 'A3', '100%', '', '']);
+    expect(second).toEqual(['', '', '', 'Assignment 2', '18 / 20', '', '']);
+    expect(third).toEqual(['', '', '', 'Assignment 3', '10 / 10', '', '']);
+  });
+
+  it('shows marks as achieved over full', () => {
+    expect(buildReportRows(course)[1][4]).toBe('18 / 20');
+  });
+
+  it('shows a dash for unentered marks but keeps the full marks', () => {
+    const ungraded: Course = {
+      ...course,
+      breakdowns: [
+        {
+          ...course.breakdowns[0],
+          subBreakdowns: [
+            { id: 's1', breakdownId: 'b-1', name: 'A1', achievedMarks: null, fullMarks: 25 },
+          ],
+        },
+      ],
+    };
+    expect(buildReportRows(ungraded)[0][4]).toBe('- / 25');
   });
 
   it('describes the downweight policy', () => {
     const downweighted: Course = {
       ...course,
-      components: [
+      breakdowns: [
         {
-          ...course.components[0],
+          ...course.breakdowns[0],
           dropLowestCount: null,
           downweightLowestCount: 2,
           downweightPercent: 25,
@@ -65,29 +85,21 @@ describe('buildReportRows', () => {
   it('shows a dash where no policy applies', () => {
     const plain: Course = {
       ...course,
-      components: [{ ...course.components[0], dropLowestCount: null }],
+      breakdowns: [{ ...course.breakdowns[0], dropLowestCount: null }],
     };
     expect(buildReportRows(plain)[0][2]).toBe('-');
   });
 
-  it('shows a dash for an unentered grade and an unset weight', () => {
-    const sparse: Course = {
+  it('shows a dash for an unset weight', () => {
+    const unweighted: Course = {
       ...course,
-      components: [
-        {
-          ...course.components[0],
-          weight: null,
-          dropLowestCount: null,
-          subComponents: [{ id: 's1', componentId: 'comp-1', name: 'A1', grade: null }],
-        },
-      ],
+      breakdowns: [{ ...course.breakdowns[0], weight: null }],
     };
-    expect(sparse.components[0].subComponents).toHaveLength(1);
-    expect(buildReportRows(sparse)[0]).toEqual(['Assignments', '-', '-', 'A1', '-', '-', '-']);
+    expect(buildReportRows(unweighted)[0][1]).toBe('-');
   });
 
-  it('is empty for a course with no components', () => {
-    expect(buildReportRows({ ...course, components: [] })).toEqual([]);
+  it('is empty for a course with no breakdowns', () => {
+    expect(buildReportRows({ ...course, breakdowns: [] })).toEqual([]);
   });
 });
 

@@ -1,11 +1,14 @@
-export interface SubComponent {
+export interface SubBreakdown {
   id: string;
-  componentId: string;
+  breakdownId: string;
   name: string;
-  grade: number | null;
+  /** Marks the student scored. `null` means not yet entered — never treat as 0. */
+  achievedMarks: number | null;
+  /** What this item was out of. Defaults to 100, so a bare percentage still works. */
+  fullMarks: number;
 }
 
-export interface Component {
+export interface Breakdown {
   id: string;
   courseId: string;
   name: string;
@@ -13,13 +16,15 @@ export interface Component {
   dropLowestCount: number | null;
   downweightLowestCount: number | null;
   downweightPercent: number | null;
-  subComponents: SubComponent[];
+  /** Singular noun used to auto-name new sub-breakdowns, e.g. "Assignment" → "Assignment 3". */
+  subBreakdownLabel: string;
+  subBreakdowns: SubBreakdown[];
 }
 
 export interface Course {
   id: string;
   name: string;
-  components: Component[];
+  breakdowns: Breakdown[];
 }
 
 export type AdvancedOption = 'none' | 'dropLowest' | 'downweight';

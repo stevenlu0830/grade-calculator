@@ -4,7 +4,7 @@
 
 ## Imports
 
-- Always `@/...` for `src` — never relative `../`. Exception: sibling components inside `src/components/` use `./ComponentCard`.
+- Always `@/...` for `src` — never relative `../`. Exception: sibling components inside `src/components/` use `./BreakdownCard`.
 - Order: types → local components → lib/helpers → `@/components/ui/*` → `lucide-react` icons → React hooks.
 - Icons: `lucide-react` only, sized with classes (`h-4 w-4`), never an icon library mix.
 
@@ -12,9 +12,9 @@
 
 - Named `export function Foo({...}: FooProps)` for feature components; `export default` **only** for pages.
 - Props interface declared immediately above the component, named `<Component>Props`. Not exported.
-- Callbacks are `on<Verb>` (`onUpdate`, `onDelete`, `onAddSubComponent`) and are prop-drilled — parents close over IDs so children never see them:
+- Callbacks are `on<Verb>` (`onUpdate`, `onDelete`, `onAddSubBreakdown`) and are prop-drilled — parents close over IDs so children never see them:
   ```tsx
-  onUpdate={updates => onUpdateComponent(component.id, updates)}
+  onUpdate={updates => onUpdateBreakdown(breakdown.id, updates)}
   ```
 - Partial updates: mutations take `Partial<T>`, never individual field setters.
 - No `React.FC`. No `memo`/`useMemo` anywhere — grade math is cheap and recomputed on render.
@@ -26,7 +26,7 @@
 - Immutable updates via spread + `.map`/`.filter`. Never mutate; never add Immer/Redux/Zustand.
 - Every store action is wrapped in `useCallback` with `[]` deps (uses functional `setCourses(prev => ...)`).
 - `null` means "not set" for all numeric fields. Never use `0` or `undefined` as the empty value.
-- Nullable reads use `??`, not `||`, so a real `0` survives: `component.weight ?? ''`.
+- Nullable reads use `??`, not `||`, so a real `0` survives: `breakdown.weight ?? ''`.
 - Persistence is implicit — the store's `useEffect` autosaves. Never write `localStorage` from a component.
 
 ## Layering
@@ -47,9 +47,10 @@ pages / components  →  hooks  →  lib  →  types
 
 - All maths lives in `src/lib/gradeCalculations.ts` and `src/lib/gradePolicies.ts` as pure functions. No calculation inline in JSX.
 - Functions returning a grade return `number | null`; `null` propagates rather than defaulting to 0.
-- Clamp at ingest with `clampGrade` — never hand-roll `Math.min(100, Math.max(0, x))`.
+- A grade is **total marks achieved over total marks available**, never an average of percentages. Sum the marks; don't average the ratios.
+- `achievedMarks` is marks, not a percentage. Clamp at ingest with `clampAchievedMarks(value, fullMarks)` — never hand-roll `Math.min(100, Math.max(0, x))`, and never assume 100.
 - Never render a raw number: go through `formatGrade`/`formatWeight`/`GradeDisplay`.
-- Gate course totals on `areWeightsValid(components)`. Never compare a weight sum with `===` — floating-point drift makes `0.01 + 64.04 + 35.95 !== 100`.
+- Gate course totals on `areWeightsValid(breakdowns)`. Never compare a weight sum with `===` — floating-point drift makes `0.01 + 64.04 + 35.95 !== 100`.
 - A rule the UI and the calculator both need (which policy is active, what a toggle clears) belongs in `gradePolicies`, not in a component.
 
 ## Styling
@@ -68,8 +69,16 @@ pages / components  →  hooks  →  lib  →  types
 
 ## TypeScript
 
-- `strict` is **off**. Still annotate props, return types on lib functions, and avoid new `any` — the one existing cast (`doc as any` in the PDF export) is a jsPDF workaround, not a pattern.
-- Domain types live in `src/types/grades.ts`. Don't redeclare shapes locally; use `Partial<Component>` etc.
+- `strict` is **off**. Still annotate props, return types on lib functions, and avoid new `any`. Where a library forces a cast (jspdf-autotable's `lastAutoTable`), describe the shape in a named local interface and comment why.
+- Domain types live in `src/types/grades.ts`. Don't redeclare shapes locally; use `Partial<Breakdown>` etc.
+
+## Vocabulary
+
+The domain is Course → **Breakdown** → **Sub-breakdown**. Use those words in code, UI text, CSV headers and comments alike.
+
+- "Component" means **React component** and nothing else. Never reintroduce it as a domain term.
+- New numeric fields use `NumberInput`, not raw `<Input type="number">`, so the scroll wheel can't silently rewrite a value.
+- Breakdown types and their singular forms live in `breakdownPresets.ts`. Add a preset there rather than hard-coding a label in a dialog.
 
 ## Naming & files
 
@@ -80,7 +89,8 @@ pages / components  →  hooks  →  lib  →  types
 ## State & IDs
 
 - Mint IDs with `createId()` from `@/lib/id`. Never inline `Math.random()`.
-- Nested immutable updates go through the store's `mapCourse` / `mapComponent` helpers rather than hand-rolled nested `.map` chains.
+- Changing the persisted shape means bumping `SCHEMA_VERSION` and extending `migrate` in `courseStorage.ts`, with a test proving old data still calculates the same. Saved data is the only thing here we cannot regenerate.
+- Nested immutable updates go through the store's `mapCourse` / `mapBreakdown` helpers rather than hand-rolled nested `.map` chains.
 - `useGradeStore` takes its storage as an argument. Depend on the `CourseStorage` interface, not on `localStorage`.
 
 ## Tests

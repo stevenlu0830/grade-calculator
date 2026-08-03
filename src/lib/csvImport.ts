@@ -1,5 +1,6 @@
-import { Component, Course } from '@/types/grades';
-import { clampGrade } from '@/lib/gradeCalculations';
+import { Breakdown, Course } from '@/types/grades';
+import { DEFAULT_FULL_MARKS, clampAchievedMarks } from '@/lib/gradeCalculations';
+import { presetFor } from '@/lib/breakdownPresets';
 import { createId } from '@/lib/id';
 import { CSV_HEADERS } from '@/lib/csvExport';
 
@@ -42,67 +43,91 @@ function parseLine(line: string): string[] {
   return cells;
 }
 
-type ColumnMap = Record<
+type ColumnKey =
   | 'courseName'
-  | 'componentName'
+  | 'breakdownName'
   | 'weight'
   | 'dropLowest'
   | 'downweightCount'
   | 'downweightPercent'
   | 'subName'
-  | 'grade',
-  number
->;
+  | 'achievedMarks'
+  | 'fullMarks';
+
+type ColumnMap = Record<ColumnKey, number>;
+
+/**
+ * Header names for each column, current first.
+ *
+ * The trailing entries are the pre-"breakdown" spelling, kept so CSVs exported
+ * by older builds still import. `Full Marks` has no legacy equivalent — files
+ * without it fall back to 100, which is what those grades already meant.
+ */
+const COLUMN_ALIASES: Record<ColumnKey, readonly string[]> = {
+  courseName: ['Course Name'],
+  breakdownName: ['Breakdown Name', 'Component Name'],
+  weight: ['Breakdown Weight (%)', 'Component Weight (%)'],
+  dropLowest: ['Drop Lowest'],
+  downweightCount: ['Downweight Count'],
+  downweightPercent: ['Downweight %'],
+  subName: ['Sub-breakdown Name', 'Sub-component Name'],
+  achievedMarks: ['Marks Achieved', 'Grade'],
+  fullMarks: ['Full Marks'],
+};
+
+const COLUMN_KEYS = Object.keys(COLUMN_ALIASES) as ColumnKey[];
 
 /**
  * Locates each column by header name, falling back to its canonical position.
  *
  * Lets a file survive reordered or added columns, which spreadsheet round-trips
- * routinely introduce.
+ * routinely introduce. A missing column resolves to -1 and reads as empty.
  */
 function resolveColumns(header: string[]): ColumnMap {
   const trimmed = header.map(h => (h ?? '').trim());
-  const indexOf = (name: (typeof CSV_HEADERS)[number]): number => {
-    const found = trimmed.indexOf(name);
-    return found >= 0 ? found : CSV_HEADERS.indexOf(name);
+
+  const resolve = (key: ColumnKey): number => {
+    for (const alias of COLUMN_ALIASES[key]) {
+      const found = trimmed.indexOf(alias);
+      if (found >= 0) return found;
+    }
+    return CSV_HEADERS.indexOf(COLUMN_ALIASES[key][0] as (typeof CSV_HEADERS)[number]);
   };
 
-  return {
-    courseName: indexOf('Course Name'),
-    componentName: indexOf('Component Name'),
-    weight: indexOf('Component Weight (%)'),
-    dropLowest: indexOf('Drop Lowest'),
-    downweightCount: indexOf('Downweight Count'),
-    downweightPercent: indexOf('Downweight %'),
-    subName: indexOf('Sub-component Name'),
-    grade: indexOf('Grade'),
-  };
+  return Object.fromEntries(COLUMN_KEYS.map(key => [key, resolve(key)])) as ColumnMap;
 }
 
 const toFloat = (value: string): number | null => (value ? parseFloat(value) : null);
 const toInt = (value: string): number | null => (value ? parseInt(value) : null);
 
-function createComponent(courseId: string, name: string, row: string[], col: ColumnMap): Component {
+function createBreakdown(
+  courseId: string,
+  name: string,
+  cell: (index: number) => string,
+  col: ColumnMap
+): Breakdown {
   return {
     id: createId(),
     courseId,
     name,
-    weight: toFloat(row[col.weight]),
-    dropLowestCount: toInt(row[col.dropLowest]),
-    downweightLowestCount: toInt(row[col.downweightCount]),
-    downweightPercent: toFloat(row[col.downweightPercent]),
-    subComponents: [],
+    weight: toFloat(cell(col.weight)),
+    dropLowestCount: toInt(cell(col.dropLowest)),
+    downweightLowestCount: toInt(cell(col.downweightCount)),
+    downweightPercent: toFloat(cell(col.downweightPercent)),
+    subBreakdownLabel: presetFor(name).singular,
+    subBreakdowns: [],
   };
 }
 
-/** Every component needs at least one row for the UI to render an input. */
-function ensureSubComponent(component: Component): void {
-  if (component.subComponents.length === 0) {
-    component.subComponents.push({
+/** Every breakdown needs at least one row for the UI to render an input. */
+function ensureSubBreakdown(breakdown: Breakdown): void {
+  if (breakdown.subBreakdowns.length === 0) {
+    breakdown.subBreakdowns.push({
       id: createId(),
-      componentId: component.id,
-      name: '',
-      grade: null,
+      breakdownId: breakdown.id,
+      name: `${breakdown.subBreakdownLabel} 1`,
+      achievedMarks: null,
+      fullMarks: DEFAULT_FULL_MARKS,
     });
   }
 }
@@ -116,41 +141,44 @@ export function parseCSV(csvText: string): Course[] {
 
   const coursesByName = new Map<string, Course>();
   let currentCourseName = '';
-  let currentComponent: Component | null = null;
+  let currentBreakdown: Breakdown | null = null;
 
   for (const row of dataLines) {
     while (row.length < width) row.push('');
 
-    const cell = (index: number): string => row[index] ?? '';
+    const cell = (index: number): string => (index >= 0 ? row[index] ?? '' : '');
 
     // Blank parent cells mean "same as the row above" — see `firstRowOnly`.
     const courseName = cell(col.courseName) || currentCourseName;
     currentCourseName = courseName;
 
     if (!coursesByName.has(courseName)) {
-      coursesByName.set(courseName, { id: createId(), name: courseName, components: [] });
+      coursesByName.set(courseName, { id: createId(), name: courseName, breakdowns: [] });
     }
     const course = coursesByName.get(courseName)!;
 
-    const componentName = cell(col.componentName);
-    if (componentName) {
-      currentComponent = createComponent(course.id, componentName, row, col);
-      course.components.push(currentComponent);
+    const breakdownName = cell(col.breakdownName);
+    if (breakdownName) {
+      currentBreakdown = createBreakdown(course.id, breakdownName, cell, col);
+      course.breakdowns.push(currentBreakdown);
     }
 
     const subName = cell(col.subName);
-    if (currentComponent && subName) {
-      const grade = toFloat(cell(col.grade));
-      currentComponent.subComponents.push({
+    if (currentBreakdown && subName) {
+      const fullMarks = toFloat(cell(col.fullMarks)) ?? DEFAULT_FULL_MARKS;
+      const achieved = toFloat(cell(col.achievedMarks));
+
+      currentBreakdown.subBreakdowns.push({
         id: createId(),
-        componentId: currentComponent.id,
+        breakdownId: currentBreakdown.id,
         name: subName,
-        grade: grade === null ? null : clampGrade(grade),
+        achievedMarks: achieved === null ? null : clampAchievedMarks(achieved, fullMarks),
+        fullMarks: Math.max(0, fullMarks),
       });
     }
   }
 
   const courses = Array.from(coursesByName.values());
-  courses.forEach(course => course.components.forEach(ensureSubComponent));
+  courses.forEach(course => course.breakdowns.forEach(ensureSubBreakdown));
   return courses;
 }

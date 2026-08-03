@@ -1,4 +1,4 @@
-import { Course } from '@/types/grades';
+import { Breakdown, Course } from '@/types/grades';
 import { downloadBlob } from '@/lib/download';
 import { firstRowOnly, timestampedFilename } from '@/lib/exportFormat';
 
@@ -11,16 +11,17 @@ import { firstRowOnly, timestampedFilename } from '@/lib/exportFormat';
 
 export const CSV_HEADERS = [
   'Course Name',
-  'Component Name',
-  'Component Weight (%)',
+  'Breakdown Name',
+  'Breakdown Weight (%)',
   'Drop Lowest',
   'Downweight Count',
   'Downweight %',
-  'Sub-component Name',
-  'Grade',
+  'Sub-breakdown Name',
+  'Marks Achieved',
+  'Full Marks',
 ] as const;
 
-const EMPTY_ROW_TAIL = ['', ''];
+const EMPTY_ROW_TAIL = ['', '', ''];
 
 const optional = (value: number | null): string => value?.toString() ?? '';
 
@@ -32,35 +33,32 @@ function escapeCell(cell: string): string {
 }
 
 /** The six parent columns, blanked on every row but the group's first. */
-function componentCells(
-  course: Course,
-  component: Course['components'][number],
-  rowIndex: number
-): string[] {
+function breakdownCells(course: Course, breakdown: Breakdown, rowIndex: number): string[] {
   return [
     firstRowOnly(rowIndex, course.name),
-    firstRowOnly(rowIndex, component.name),
-    firstRowOnly(rowIndex, optional(component.weight)),
-    firstRowOnly(rowIndex, optional(component.dropLowestCount)),
-    firstRowOnly(rowIndex, optional(component.downweightLowestCount)),
-    firstRowOnly(rowIndex, optional(component.downweightPercent)),
+    firstRowOnly(rowIndex, breakdown.name),
+    firstRowOnly(rowIndex, optional(breakdown.weight)),
+    firstRowOnly(rowIndex, optional(breakdown.dropLowestCount)),
+    firstRowOnly(rowIndex, optional(breakdown.downweightLowestCount)),
+    firstRowOnly(rowIndex, optional(breakdown.downweightPercent)),
   ];
 }
 
 function courseRows(course: Course): string[][] {
-  if (course.components.length === 0) {
-    return [[course.name, '', '', '', '', '', '', '']];
+  if (course.breakdowns.length === 0) {
+    return [[course.name, '', '', '', '', '', '', '', '']];
   }
 
-  return course.components.flatMap(component => {
-    if (component.subComponents.length === 0) {
-      return [[...componentCells(course, component, 0), ...EMPTY_ROW_TAIL]];
+  return course.breakdowns.flatMap(breakdown => {
+    if (breakdown.subBreakdowns.length === 0) {
+      return [[...breakdownCells(course, breakdown, 0), ...EMPTY_ROW_TAIL]];
     }
 
-    return component.subComponents.map((subComponent, index) => [
-      ...componentCells(course, component, index),
-      subComponent.name,
-      subComponent.grade !== null ? subComponent.grade.toString() : '',
+    return breakdown.subBreakdowns.map((subBreakdown, index) => [
+      ...breakdownCells(course, breakdown, index),
+      subBreakdown.name,
+      subBreakdown.achievedMarks !== null ? subBreakdown.achievedMarks.toString() : '',
+      subBreakdown.fullMarks.toString(),
     ]);
   });
 }

@@ -1,9 +1,9 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Component, Course } from '@/types/grades';
+import { Breakdown, Course } from '@/types/grades';
 import {
   areWeightsValid,
-  calculateComponentGrade,
+  calculateBreakdownGrade,
   calculateCourseGrade,
   calculateWeightedValue,
   getTotalWeight,
@@ -27,50 +27,50 @@ const TOP_OF_PAGE_Y = 20;
 const HEADER_FILL: [number, number, number] = [99, 102, 241];
 
 const TABLE_HEADERS = [
-  'Component',
+  'Breakdown',
   'Weight',
   'Advanced Options',
-  'Sub-component',
-  'Grade',
-  'Component Grade',
+  'Sub-breakdown',
+  'Marks',
+  'Breakdown Grade',
   'Weighted Grade',
 ];
 
 const percent = (value: number | null, decimals = 0): string =>
   value !== null ? `${value.toFixed(decimals)}%` : '-';
 
-function describeAdvancedOptions(component: Component): string {
-  if (component.dropLowestCount && component.dropLowestCount > 0) {
-    return `Drop lowest ${component.dropLowestCount}`;
+function describeAdvancedOptions(breakdown: Breakdown): string {
+  if (breakdown.dropLowestCount && breakdown.dropLowestCount > 0) {
+    return `Drop lowest ${breakdown.dropLowestCount}`;
   }
   if (
-    component.downweightLowestCount &&
-    component.downweightLowestCount > 0 &&
-    component.downweightPercent &&
-    component.downweightPercent > 0
+    breakdown.downweightLowestCount &&
+    breakdown.downweightLowestCount > 0 &&
+    breakdown.downweightPercent &&
+    breakdown.downweightPercent > 0
   ) {
-    return `Downweight lowest ${component.downweightLowestCount} by ${component.downweightPercent}%`;
+    return `Downweight lowest ${breakdown.downweightLowestCount} by ${breakdown.downweightPercent}%`;
   }
   return '-';
 }
 
 /**
- * One row per sub-component, with the parent's columns printed only on the
+ * One row per sub-breakdown, with the parent's columns printed only on the
  * first row of each group. Pure, so the report's contents can be asserted.
  */
 export function buildReportRows(course: Course): string[][] {
-  return course.components.flatMap(component => {
-    const componentGrade = calculateComponentGrade(component);
-    const weightedGrade = calculateWeightedValue(component);
-    const advancedOptions = describeAdvancedOptions(component);
+  return course.breakdowns.flatMap(breakdown => {
+    const grade = calculateBreakdownGrade(breakdown);
+    const weightedGrade = calculateWeightedValue(breakdown);
+    const advancedOptions = describeAdvancedOptions(breakdown);
 
-    return component.subComponents.map((sub, index) => [
-      firstRowOnly(index, component.name),
-      firstRowOnly(index, component.weight !== null ? `${component.weight}%` : '-'),
+    return breakdown.subBreakdowns.map((sub, index) => [
+      firstRowOnly(index, breakdown.name),
+      firstRowOnly(index, breakdown.weight !== null ? `${breakdown.weight}%` : '-'),
       firstRowOnly(index, advancedOptions),
       sub.name,
-      sub.grade !== null ? `${sub.grade}%` : '-',
-      firstRowOnly(index, percent(componentGrade, 1)),
+      sub.achievedMarks !== null ? `${sub.achievedMarks} / ${sub.fullMarks}` : `- / ${sub.fullMarks}`,
+      firstRowOnly(index, percent(grade, 1)),
       firstRowOnly(index, percent(weightedGrade, 1)),
     ]);
   });
@@ -90,8 +90,8 @@ function renderCourse(doc: jsPDF, course: Course, startY: number): number {
   doc.text(course.name || 'Unnamed Course', MARGIN_LEFT, y);
 
   // A final grade is only meaningful once the weights add up.
-  const courseGrade = areWeightsValid(course.components)
-    ? calculateCourseGrade(course.components)
+  const courseGrade = areWeightsValid(course.breakdowns)
+    ? calculateCourseGrade(course.breakdowns)
     : null;
 
   if (courseGrade !== null) {
@@ -103,7 +103,7 @@ function renderCourse(doc: jsPDF, course: Course, startY: number): number {
       y + 7
     );
   } else {
-    const totalWeight = getTotalWeight(course.components);
+    const totalWeight = getTotalWeight(course.breakdowns);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'italic');
     doc.text(
@@ -115,7 +115,7 @@ function renderCourse(doc: jsPDF, course: Course, startY: number): number {
 
   y += 15;
 
-  if (course.components.length === 0) return y;
+  if (course.breakdowns.length === 0) return y;
 
   autoTable(doc, {
     startY: y,

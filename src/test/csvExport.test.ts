@@ -6,29 +6,33 @@ import { parseCSV } from '@/lib/csvImport';
 const course: Course = {
   id: 'course-1',
   name: 'CPSC 121',
-  components: [
+  breakdowns: [
     {
-      id: 'comp-1',
+      id: 'b-1',
       courseId: 'course-1',
       name: 'Assignments',
       weight: 40,
       dropLowestCount: 1,
       downweightLowestCount: null,
       downweightPercent: null,
-      subComponents: [
-        { id: 's1', componentId: 'comp-1', name: 'A1', grade: 92 },
-        { id: 's2', componentId: 'comp-1', name: 'A2', grade: null },
+      subBreakdownLabel: 'Assignment',
+      subBreakdowns: [
+        { id: 's1', breakdownId: 'b-1', name: 'Assignment 1', achievedMarks: 18, fullMarks: 20 },
+        { id: 's2', breakdownId: 'b-1', name: 'Assignment 2', achievedMarks: null, fullMarks: 25 },
       ],
     },
     {
-      id: 'comp-2',
+      id: 'b-2',
       courseId: 'course-1',
-      name: 'Final',
+      name: 'Final Exam',
       weight: 60,
       dropLowestCount: null,
       downweightLowestCount: 1,
       downweightPercent: 50,
-      subComponents: [{ id: 's3', componentId: 'comp-2', name: 'Exam', grade: 78 }],
+      subBreakdownLabel: 'Final Exam',
+      subBreakdowns: [
+        { id: 's3', breakdownId: 'b-2', name: 'Final Exam 1', achievedMarks: 78, fullMarks: 100 },
+      ],
     },
   ],
 };
@@ -40,35 +44,34 @@ describe('buildCoursesCsv', () => {
     expect(lines(buildCoursesCsv([]))[0]).toBe(CSV_HEADERS.join(','));
   });
 
-  it('emits one row per sub-component', () => {
+  it('emits one row per sub-breakdown', () => {
     expect(lines(buildCoursesCsv([course]))).toHaveLength(1 + 3);
   });
 
   it('prints parent columns only on the first row of each group', () => {
     const [, first, second] = lines(buildCoursesCsv([course]));
 
-    expect(first).toBe('CPSC 121,Assignments,40,1,,,A1,92');
-    // A2 belongs to the same component, so every parent column is blank.
-    expect(second).toBe(',,,,,,A2,');
+    expect(first).toBe('CPSC 121,Assignments,40,1,,,Assignment 1,18,20');
+    // Assignment 2 belongs to the same breakdown, so parent columns are blank.
+    expect(second).toBe(',,,,,,Assignment 2,,25');
   });
 
-  it('writes an unentered grade as an empty cell, not a zero', () => {
-    expect(lines(buildCoursesCsv([course]))[2].endsWith(',A2,')).toBe(true);
+  it('writes unentered marks as an empty cell but keeps the full marks', () => {
+    expect(lines(buildCoursesCsv([course]))[2].endsWith(',Assignment 2,,25')).toBe(true);
   });
 
   it('quotes cells containing a comma', () => {
-    const named = { ...course, name: 'Smith, J.', components: [] };
-    expect(lines(buildCoursesCsv([named]))[1]).toBe('"Smith, J.",,,,,,,');
+    const named = { ...course, name: 'Smith, J.', breakdowns: [] };
+    expect(lines(buildCoursesCsv([named]))[1]).toBe('"Smith, J.",,,,,,,,');
   });
 
   it('doubles embedded quotes', () => {
-    const named = { ...course, name: 'The "Big" One', components: [] };
-    expect(lines(buildCoursesCsv([named]))[1]).toBe('"The ""Big"" One",,,,,,,');
+    const named = { ...course, name: 'The "Big" One', breakdowns: [] };
+    expect(lines(buildCoursesCsv([named]))[1]).toBe('"The ""Big"" One",,,,,,,,');
   });
 
-  it('still emits a row for a course with no components', () => {
-    const empty = { ...course, components: [] };
-    expect(lines(buildCoursesCsv([empty]))).toHaveLength(2);
+  it('still emits a row for a course with no breakdowns', () => {
+    expect(lines(buildCoursesCsv([{ ...course, breakdowns: [] }]))).toHaveLength(2);
   });
 });
 
@@ -77,40 +80,42 @@ describe('CSV round trip', () => {
     const [reimported] = parseCSV(buildCoursesCsv([course]));
 
     expect(reimported.name).toBe(course.name);
-    expect(reimported.components).toHaveLength(2);
+    expect(reimported.breakdowns).toHaveLength(2);
 
-    expect(reimported.components[0]).toMatchObject({
+    expect(reimported.breakdowns[0]).toMatchObject({
       name: 'Assignments',
       weight: 40,
       dropLowestCount: 1,
       downweightLowestCount: null,
       downweightPercent: null,
     });
-    expect(reimported.components[0].subComponents).toMatchObject([
-      { name: 'A1', grade: 92 },
-      { name: 'A2', grade: null },
+    expect(reimported.breakdowns[0].subBreakdowns).toMatchObject([
+      { name: 'Assignment 1', achievedMarks: 18, fullMarks: 20 },
+      { name: 'Assignment 2', achievedMarks: null, fullMarks: 25 },
     ]);
 
-    expect(reimported.components[1]).toMatchObject({
-      name: 'Final',
+    expect(reimported.breakdowns[1]).toMatchObject({
+      name: 'Final Exam',
       weight: 60,
       dropLowestCount: null,
       downweightLowestCount: 1,
       downweightPercent: 50,
     });
-    expect(reimported.components[1].subComponents).toMatchObject([{ name: 'Exam', grade: 78 }]);
+    expect(reimported.breakdowns[1].subBreakdowns).toMatchObject([
+      { name: 'Final Exam 1', achievedMarks: 78, fullMarks: 100 },
+    ]);
   });
 
   it('preserves names that need quoting', () => {
     const awkward: Course = {
       ...course,
       name: 'Smith, J. — "Intro"',
-      components: [
+      breakdowns: [
         {
-          ...course.components[0],
+          ...course.breakdowns[0],
           name: 'Labs, weekly',
-          subComponents: [
-            { id: 's1', componentId: 'comp-1', name: 'Lab "1"', grade: 88 },
+          subBreakdowns: [
+            { id: 's1', breakdownId: 'b-1', name: 'Lab "1"', achievedMarks: 8, fullMarks: 10 },
           ],
         },
       ],
@@ -119,8 +124,8 @@ describe('CSV round trip', () => {
     const [reimported] = parseCSV(buildCoursesCsv([awkward]));
 
     expect(reimported.name).toBe('Smith, J. — "Intro"');
-    expect(reimported.components[0].name).toBe('Labs, weekly');
-    expect(reimported.components[0].subComponents[0].name).toBe('Lab "1"');
+    expect(reimported.breakdowns[0].name).toBe('Labs, weekly');
+    expect(reimported.breakdowns[0].subBreakdowns[0].name).toBe('Lab "1"');
   });
 
   it('survives multiple courses', () => {
@@ -128,6 +133,6 @@ describe('CSV round trip', () => {
     const reimported = parseCSV(buildCoursesCsv([course, second]));
 
     expect(reimported.map(c => c.name)).toEqual(['CPSC 121', 'MATH 200']);
-    expect(reimported.every(c => c.components.length === 2)).toBe(true);
+    expect(reimported.every(c => c.breakdowns.length === 2)).toBe(true);
   });
 });

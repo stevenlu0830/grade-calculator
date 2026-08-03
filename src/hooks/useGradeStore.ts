@@ -1,48 +1,53 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Course, Component, SubComponent } from '@/types/grades';
+import { Course, Breakdown, SubBreakdown } from '@/types/grades';
 import { CourseStorage, localCourseStorage } from '@/lib/courseStorage';
-import { clampGrade } from '@/lib/gradeCalculations';
+import { DEFAULT_FULL_MARKS, clampAchievedMarks } from '@/lib/gradeCalculations';
+import { nextSubBreakdownName } from '@/lib/breakdownPresets';
 import { createId } from '@/lib/id';
 
-const createDefaultSubComponent = (componentId: string): SubComponent => ({
+/** What a newly added breakdown needs; everything else has a sensible default. */
+export interface NewBreakdown {
+  name: string;
+  weight: number | null;
+  subBreakdownLabel: string;
+}
+
+const createSubBreakdown = (breakdownId: string, name: string): SubBreakdown => ({
   id: createId(),
-  componentId,
-  name: '',
-  grade: null,
+  breakdownId,
+  name,
+  achievedMarks: null,
+  fullMarks: DEFAULT_FULL_MARKS,
 });
 
-const createDefaultComponent = (courseId: string): Component => {
-  const componentId = createId();
+const createBreakdown = (courseId: string, input: NewBreakdown): Breakdown => {
+  const breakdownId = createId();
   return {
-    id: componentId,
+    id: breakdownId,
     courseId,
-    name: '',
-    weight: null,
+    name: input.name,
+    weight: input.weight,
     dropLowestCount: null,
     downweightLowestCount: null,
     downweightPercent: null,
-    subComponents: [createDefaultSubComponent(componentId)],
+    subBreakdownLabel: input.subBreakdownLabel,
+    // Every breakdown starts with one row so there's somewhere to type a mark.
+    subBreakdowns: [createSubBreakdown(breakdownId, `${input.subBreakdownLabel} 1`)],
   };
 };
-
-const createDefaultCourse = (): Course => ({
-  id: createId(),
-  name: '',
-  components: [],
-});
 
 /** Applies `update` to the matching course, leaving the others untouched. */
 const mapCourse = (courses: Course[], courseId: string, update: (course: Course) => Course) =>
   courses.map(course => (course.id === courseId ? update(course) : course));
 
-/** Applies `update` to the matching component within a course. */
-const mapComponent = (
+/** Applies `update` to the matching breakdown within a course. */
+const mapBreakdown = (
   course: Course,
-  componentId: string,
-  update: (component: Component) => Component
+  breakdownId: string,
+  update: (breakdown: Breakdown) => Breakdown
 ): Course => ({
   ...course,
-  components: course.components.map(c => (c.id === componentId ? update(c) : c)),
+  breakdowns: course.breakdowns.map(b => (b.id === breakdownId ? update(b) : b)),
 });
 
 /**
@@ -60,8 +65,8 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
     storage.save(courses);
   }, [courses, storage]);
 
-  const addCourse = useCallback(() => {
-    setCourses(prev => [...prev, createDefaultCourse()]);
+  const addCourse = useCallback((name: string) => {
+    setCourses(prev => [...prev, { id: createId(), name, breakdowns: [] }]);
   }, []);
 
   const deleteCourse = useCallback((courseId: string) => {
@@ -72,57 +77,66 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
     setCourses(prev => mapCourse(prev, courseId, course => ({ ...course, name })));
   }, []);
 
-  const addComponent = useCallback((courseId: string) => {
+  const addBreakdown = useCallback((courseId: string, input: NewBreakdown) => {
     setCourses(prev =>
       mapCourse(prev, courseId, course => ({
         ...course,
-        components: [...course.components, createDefaultComponent(courseId)],
+        breakdowns: [...course.breakdowns, createBreakdown(courseId, input)],
       }))
     );
   }, []);
 
-  const deleteComponent = useCallback((courseId: string, componentId: string) => {
+  const deleteBreakdown = useCallback((courseId: string, breakdownId: string) => {
     setCourses(prev =>
       mapCourse(prev, courseId, course => ({
         ...course,
-        components: course.components.filter(c => c.id !== componentId),
+        breakdowns: course.breakdowns.filter(b => b.id !== breakdownId),
       }))
     );
   }, []);
 
-  const updateComponent = useCallback(
-    (courseId: string, componentId: string, updates: Partial<Component>) => {
+  const updateBreakdown = useCallback(
+    (courseId: string, breakdownId: string, updates: Partial<Breakdown>) => {
       setCourses(prev =>
         mapCourse(prev, courseId, course =>
-          mapComponent(course, componentId, component => ({ ...component, ...updates }))
+          mapBreakdown(course, breakdownId, breakdown => ({ ...breakdown, ...updates }))
         )
       );
     },
     []
   );
 
-  const addSubComponent = useCallback((courseId: string, componentId: string) => {
+  const addSubBreakdown = useCallback((courseId: string, breakdownId: string) => {
     setCourses(prev =>
       mapCourse(prev, courseId, course =>
-        mapComponent(course, componentId, component => ({
-          ...component,
-          subComponents: [...component.subComponents, createDefaultSubComponent(componentId)],
+        mapBreakdown(course, breakdownId, breakdown => ({
+          ...breakdown,
+          subBreakdowns: [
+            ...breakdown.subBreakdowns,
+            createSubBreakdown(
+              breakdownId,
+              nextSubBreakdownName(
+                breakdown.subBreakdownLabel,
+                breakdown.subBreakdowns.map(sb => sb.name)
+              )
+            ),
+          ],
         }))
       )
     );
   }, []);
 
-  const deleteSubComponent = useCallback(
-    (courseId: string, componentId: string, subComponentId: string) => {
+  const deleteSubBreakdown = useCallback(
+    (courseId: string, breakdownId: string, subBreakdownId: string) => {
       setCourses(prev =>
         mapCourse(prev, courseId, course =>
-          mapComponent(course, componentId, component =>
-            // A component always keeps at least one sub-component.
-            component.subComponents.length <= 1
-              ? component
+          mapBreakdown(course, breakdownId, breakdown =>
+            // A breakdown always keeps at least one sub-breakdown.
+            breakdown.subBreakdowns.length <= 1
+              ? breakdown
               : {
-                  ...component,
-                  subComponents: component.subComponents.filter(sc => sc.id !== subComponentId),
+                  ...breakdown,
+                  subBreakdowns: breakdown.subBreakdowns.filter(sb => sb.id !== subBreakdownId),
                 }
           )
         )
@@ -131,19 +145,19 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
     []
   );
 
-  const updateSubComponent = useCallback(
+  const updateSubBreakdown = useCallback(
     (
       courseId: string,
-      componentId: string,
-      subComponentId: string,
-      updates: Partial<SubComponent>
+      breakdownId: string,
+      subBreakdownId: string,
+      updates: Partial<SubBreakdown>
     ) => {
       setCourses(prev =>
         mapCourse(prev, courseId, course =>
-          mapComponent(course, componentId, component => ({
-            ...component,
-            subComponents: component.subComponents.map(sc =>
-              sc.id === subComponentId ? applySubComponentUpdate(sc, updates) : sc
+          mapBreakdown(course, breakdownId, breakdown => ({
+            ...breakdown,
+            subBreakdowns: breakdown.subBreakdowns.map(sb =>
+              sb.id === subBreakdownId ? applySubBreakdownUpdate(sb, updates) : sb
             ),
           }))
         )
@@ -161,27 +175,33 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
     addCourse,
     deleteCourse,
     updateCourseName,
-    addComponent,
-    deleteComponent,
-    updateComponent,
-    addSubComponent,
-    deleteSubComponent,
-    updateSubComponent,
+    addBreakdown,
+    deleteBreakdown,
+    updateBreakdown,
+    addSubBreakdown,
+    deleteSubBreakdown,
+    updateSubBreakdown,
     importCourses,
   };
 }
 
-/** Grades are clamped on write so no out-of-range value can enter the store. */
-function applySubComponentUpdate(
-  subComponent: SubComponent,
-  updates: Partial<SubComponent>
-): SubComponent {
-  const grade =
-    updates.grade === undefined
-      ? subComponent.grade
-      : updates.grade === null
-        ? null
-        : clampGrade(updates.grade);
+/**
+ * Marks are clamped on write so nothing out of range can enter the store.
+ *
+ * Lowering full marks re-clamps the achieved marks with it, so a 90/100 that
+ * becomes "out of 50" lands on 50/50 rather than an impossible 90/50.
+ */
+function applySubBreakdownUpdate(
+  subBreakdown: SubBreakdown,
+  updates: Partial<SubBreakdown>
+): SubBreakdown {
+  const merged = { ...subBreakdown, ...updates };
+  const fullMarks = Math.max(0, merged.fullMarks);
 
-  return { ...subComponent, ...updates, grade };
+  return {
+    ...merged,
+    fullMarks,
+    achievedMarks:
+      merged.achievedMarks === null ? null : clampAchievedMarks(merged.achievedMarks, fullMarks),
+  };
 }

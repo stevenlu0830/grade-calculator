@@ -1,39 +1,37 @@
-import { Component } from '@/types/grades';
-import { SubComponentRow } from './SubComponentRow';
+import { Breakdown, SubBreakdown } from '@/types/grades';
+import { SubBreakdownRow } from './SubBreakdownRow';
 import { AdvancedOptions } from './AdvancedOptions';
 import { GradeDisplay } from './GradeDisplay';
-import { calculateComponentGrade, calculateWeightedValue } from '@/lib/gradeCalculations';
+import { calculateBreakdownGrade, calculateWeightedValue } from '@/lib/gradeCalculations';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { NumberInput } from '@/components/NumberInput';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, Plus, Trash2, Settings2 } from 'lucide-react';
 import { useState } from 'react';
 
-interface ComponentCardProps {
-  component: Component;
-  onUpdate: (updates: Partial<Component>) => void;
+interface BreakdownCardProps {
+  breakdown: Breakdown;
+  onUpdate: (updates: Partial<Breakdown>) => void;
   onDelete: () => void;
-  onAddSubComponent: () => void;
-  onUpdateSubComponent: (
-    subComponentId: string,
-    updates: Partial<{ name: string; grade: number | null }>
-  ) => void;
-  onDeleteSubComponent: (subComponentId: string) => void;
+  onAddSubBreakdown: () => void;
+  onUpdateSubBreakdown: (subBreakdownId: string, updates: Partial<SubBreakdown>) => void;
+  onDeleteSubBreakdown: (subBreakdownId: string) => void;
 }
 
-export function ComponentCard({
-  component,
+export function BreakdownCard({
+  breakdown,
   onUpdate,
   onDelete,
-  onAddSubComponent,
-  onUpdateSubComponent,
-  onDeleteSubComponent,
-}: ComponentCardProps) {
+  onAddSubBreakdown,
+  onUpdateSubBreakdown,
+  onDeleteSubBreakdown,
+}: BreakdownCardProps) {
   const [isOpen, setIsOpen] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const componentGrade = calculateComponentGrade(component);
-  const weightedValue = calculateWeightedValue(component);
+  const grade = calculateBreakdownGrade(breakdown);
+  const weightedValue = calculateWeightedValue(breakdown);
 
   const handleWeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -54,33 +52,30 @@ export function ComponentCard({
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                   <ChevronDown
-                    className={`h-4 w-4 transition-transform ${
-                      isOpen ? '' : '-rotate-90'
-                    }`}
+                    className={`h-4 w-4 transition-transform ${isOpen ? '' : '-rotate-90'}`}
                   />
                 </Button>
               </CollapsibleTrigger>
               <Input
-                value={component.name}
+                value={breakdown.name}
                 onChange={e => onUpdate({ name: e.target.value })}
                 className="flex-1 h-9 font-medium border-transparent hover:border-border focus:border-border bg-transparent"
-                placeholder="Component name"
+                placeholder="Breakdown name"
               />
             </div>
             <div className="flex items-center gap-3 shrink-0">
               <div className="flex items-center gap-2">
-                <Input
-                  type="number"
+                <NumberInput
                   min={0}
                   max={100}
-                  value={component.weight ?? ''}
+                  value={breakdown.weight ?? ''}
                   onChange={handleWeightChange}
                   className="w-16 h-9 text-center font-mono"
-                  placeholder=""
+                  aria-label="Breakdown weight"
                 />
                 <span className="text-sm text-muted-foreground">%</span>
               </div>
-              <GradeDisplay grade={componentGrade} size="md" />
+              <GradeDisplay grade={grade} size="md" />
               <div className="flex items-center gap-1 min-w-[60px]">
                 <span className="text-xs text-muted-foreground">Weighted:</span>
                 <span className="text-sm font-mono font-medium">
@@ -102,13 +97,13 @@ export function ComponentCard({
         <CollapsibleContent>
           <CardContent className="pt-0">
             <div className="space-y-2">
-              {component.subComponents.map(sc => (
-                <SubComponentRow
-                  key={sc.id}
-                  subComponent={sc}
-                  canDelete={component.subComponents.length > 1}
-                  onUpdate={updates => onUpdateSubComponent(sc.id, updates)}
-                  onDelete={() => onDeleteSubComponent(sc.id)}
+              {breakdown.subBreakdowns.map(sb => (
+                <SubBreakdownRow
+                  key={sb.id}
+                  subBreakdown={sb}
+                  canDelete={breakdown.subBreakdowns.length > 1}
+                  onUpdate={updates => onUpdateSubBreakdown(sb.id, updates)}
+                  onDelete={() => onDeleteSubBreakdown(sb.id)}
                 />
               ))}
             </div>
@@ -118,10 +113,10 @@ export function ComponentCard({
                 variant="ghost"
                 size="sm"
                 className="text-primary hover:text-primary"
-                onClick={onAddSubComponent}
+                onClick={onAddSubBreakdown}
               >
                 <Plus className="h-4 w-4 mr-1.5" />
-                Add Sub-component
+                Add Sub-breakdown
               </Button>
               <Button
                 variant="ghost"
@@ -134,9 +129,7 @@ export function ComponentCard({
               </Button>
             </div>
 
-            {showAdvanced && (
-              <AdvancedOptions component={component} onUpdate={onUpdate} />
-            )}
+            {showAdvanced && <AdvancedOptions breakdown={breakdown} onUpdate={onUpdate} />}
           </CardContent>
         </CollapsibleContent>
       </Collapsible>
