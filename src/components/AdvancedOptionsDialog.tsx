@@ -37,8 +37,8 @@ export function AdvancedOptionsDialog({
         <DialogHeader>
           <DialogTitle>Advanced options</DialogTitle>
           <DialogDescription>
-            Optional rules for how this breakdown's marks are totalled. The two are mutually
-            exclusive.
+            Optional rules for this breakdown. Drop Lowest and Downweight are mutually exclusive;
+            Full Credit combines with either, scaling the result so that percentage earns 100%.
           </DialogDescription>
         </DialogHeader>
 

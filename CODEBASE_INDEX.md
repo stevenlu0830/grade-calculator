@@ -128,7 +128,7 @@ Presentational; state arrives as props. None read the store.
 - [CourseSection.tsx](src/components/CourseSection.tsx) (133) — one course. Gates the final grade on `areWeightsValid`; owns its own `AddBreakdownDialog` instance.
 - [BreakdownCard.tsx](src/components/BreakdownCard.tsx) (133) — one breakdown. Local UI state: `isOpen`, `showAdvanced`.
 - [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) (80) — name, `achieved / full` mark inputs, and the row's own percentage.
-- [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) — three switches as a **controlled field group** over a `GradingPolicy`. Drop/downweight disable each other; Full Credit deliberately does not. Used by both dialogs; holds no rules of its own.
+- [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) — three switches as a **controlled field group** over a `GradingPolicy`. Drop/downweight disable each other; Full Credit deliberately does not. Holds one piece of local state, `fullCreditEnabled`, because `fullCreditGrade === null` already means "off" and so can't also mean "on, threshold not typed yet". No help tooltips — they never worked and were removed. Used by both dialogs; holds no rules of its own.
 - [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) — modal wrapper with Cancel/Apply. Draft state lives in an inner component `key`ed on `open`, so it re-seeds on every open (see the comment there — two subtler approaches were both wrong).
 - [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx) (74) — prompts for a course name; Add disabled while blank.
 - [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) — preset picker + "Others (Specify)" free text + weight + a collapsed advanced-options section, in a `<form>` so Return submits. Caps the dropdown with `max-h-56`.
@@ -166,7 +166,7 @@ All tests live here, one file per module, importing via `@/lib/...`:
 
 ## Build & config
 
-- [vite.config.ts](vite.config.ts) — port **8080**, `@` → `./src`, `lovable-tagger` in dev only.
+- [vite.config.ts](vite.config.ts) — port **8080**, `open: true` (launches the OS default browser on `npm run dev`; `BROWSER=none` suppresses it), `@` → `./src`, `lovable-tagger` in dev only.
 - [vitest.config.ts](vitest.config.ts) — jsdom, globals on.
 - [.claude/launch.json](.claude/launch.json) — dev-server config for tooling.
 - [tsconfig.app.json](tsconfig.app.json) — ⚠️ `strict: false`. Types are advisory.

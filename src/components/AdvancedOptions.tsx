@@ -1,9 +1,9 @@
+import { useState } from 'react';
 import { AdvancedOption } from '@/types/grades';
 import {
   DEFAULT_DOWNWEIGHT_COUNT,
   DEFAULT_DOWNWEIGHT_PERCENT,
   DEFAULT_DROP_LOWEST_COUNT,
-  DEFAULT_FULL_CREDIT_GRADE,
   GradingPolicy,
   advancedOptionUpdate,
   clampPercent,
@@ -12,8 +12,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { NumberInput } from '@/components/NumberInput';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { HelpCircle } from 'lucide-react';
 
 interface AdvancedOptionsProps {
   policy: GradingPolicy;
@@ -21,15 +19,25 @@ interface AdvancedOptionsProps {
 }
 
 /**
- * The drop-lowest / downweight switches, as a controlled field group.
+ * The grading-policy switches, as a controlled field group.
  *
  * Works on a bare `GradingPolicy` rather than a whole breakdown, so the same
  * component drives the draft in "Add breakdown" and the draft in the advanced
- * options dialog. It holds no rules of its own — everything comes from
+ * options dialog. It holds no grading rules of its own — everything comes from
  * `gradePolicies`, which the calculator reads too.
  */
 export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
   const activeOption = getActiveAdvancedOption(policy);
+
+  /**
+   * Whether the full-credit row is showing its input.
+   *
+   * This is the one piece of local state here, and it exists because the policy
+   * can't express "switched on, no threshold yet": `fullCreditGrade === null` is
+   * exactly what "off" means. Seeded from the policy, so an existing threshold
+   * shows up switched on.
+   */
+  const [fullCreditEnabled, setFullCreditEnabled] = useState(policy.fullCreditGrade !== null);
 
   // Turning a marks policy on clears the other; turning it off falls back to
   // 'none'. Spread over the existing policy so full credit survives the switch.
@@ -39,8 +47,21 @@ export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
   const setField = (field: keyof GradingPolicy, value: number | null) =>
     onChange({ ...policy, [field]: value });
 
-  const toggleFullCredit = (enabled: boolean) =>
-    setField('fullCreditGrade', enabled ? DEFAULT_FULL_CREDIT_GRADE : null);
+  const toggleFullCredit = (enabled: boolean) => {
+    setFullCreditEnabled(enabled);
+    // Switching on leaves the field blank — there is nothing to commit until a
+    // threshold is typed, and a blank threshold correctly applies no scaling.
+    if (!enabled) setField('fullCreditGrade', null);
+  };
+
+  const handleFullCreditChange = (raw: string) => {
+    if (raw === '') {
+      setField('fullCreditGrade', null);
+      return;
+    }
+    const parsed = parseFloat(raw);
+    if (!Number.isNaN(parsed)) setField('fullCreditGrade', clampPercent(parsed));
+  };
 
   return (
     <div className="space-y-4">
@@ -53,21 +74,7 @@ export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
             disabled={activeOption === 'downweight'}
             aria-label="Drop lowest"
           />
-          <Label className="text-sm font-medium flex items-center gap-1.5">
-            Drop Lowest
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs">
-                <p>
-                  Exclude the N lowest-scoring sub-breakdowns, ranked by percentage, before
-                  totalling marks. Their full marks leave the total too. At least one is
-                  always kept.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </Label>
+          <Label className="text-sm font-medium">Drop Lowest</Label>
         </div>
         {activeOption === 'dropLowest' && (
           <div className="flex items-center gap-2 animate-fade-in">
@@ -95,20 +102,7 @@ export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
             disabled={activeOption === 'dropLowest'}
             aria-label="Downweight lowest"
           />
-          <Label className="text-sm font-medium flex items-center gap-1.5">
-            Downweight
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs">
-                <p>
-                  Shrink the N lowest-scoring sub-breakdowns by a percentage — both their
-                  marks and their full marks. A 100% downweight is equivalent to dropping.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </Label>
+          <Label className="text-sm font-medium">Downweight</Label>
         </div>
         {activeOption === 'downweight' && (
           <div className="flex items-center gap-2 flex-wrap animate-fade-in">
@@ -149,36 +143,21 @@ export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
       <div className="flex items-start gap-4 pt-1 border-t border-border">
         <div className="flex items-center gap-2 min-w-[160px] pt-3">
           <Switch
-            checked={policy.fullCreditGrade !== null}
+            checked={fullCreditEnabled}
             onCheckedChange={toggleFullCredit}
             aria-label="Full credit grade"
           />
-          <Label className="text-sm font-medium flex items-center gap-1.5">
-            Full Credit
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs">
-                <p>
-                  Reaching this percentage earns 100% for the breakdown, and lower scores
-                  scale up proportionally. With 60% for full credit, 59/100 becomes
-                  59 / 60 = 98.33%. Combines with the options above.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </Label>
+          <Label className="text-sm font-medium">Full Credit</Label>
         </div>
-        {policy.fullCreditGrade !== null && (
+        {fullCreditEnabled && (
           <div className="flex items-center gap-2 pt-3 animate-fade-in">
             <NumberInput
               min={0}
               max={100}
-              value={policy.fullCreditGrade}
-              onChange={e =>
-                setField('fullCreditGrade', clampPercent(parseFloat(e.target.value) || 0))
-              }
+              value={policy.fullCreditGrade ?? ''}
+              onChange={e => handleFullCreditChange(e.target.value)}
               className="w-16 h-8 text-center"
+              placeholder="—"
               aria-label="Full credit percentage"
             />
             <Label className="text-sm text-muted-foreground">% earns full credit</Label>

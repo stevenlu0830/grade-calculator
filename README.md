@@ -37,11 +37,13 @@ git clone https://github.com/stevenlu0830/grade-calculator.git
 cd grade-calculator
 
 npm i          # bun.lock is also committed — see §9
-npm run dev    # http://localhost:8080
+npm run dev    # http://localhost:8080 — opens your default browser automatically
 npm run build  # → dist/
 npm run lint
 npm test       # vitest run
 ```
+
+`npm run dev` opens the OS default browser via Vite's `server.open`. Set `BROWSER=none npm run dev` to suppress it — useful in CI, or when an editor preview is already attached.
 
 This project was scaffolded with Lovable ([project dashboard](https://lovable.dev/projects/d0699e8b-131a-4000-8300-6958b9e4ca5b)); changes pushed to the repo and changes made there stay in sync. Editing locally, in GitHub's web editor, or in a Codespace all work.
 
@@ -139,6 +141,7 @@ The maths is pure and split across two modules. [gradeCalculations.ts](src/lib/g
 - A raw 59% → `59 / 60 × 100` = **98.33%** (unrounded 98.333…).
 - A raw 80% → the bare ratio is 133%, but "or higher earns full credit" means it **caps at 100%**.
 - `x = 100` is the identity; `x = 0` awards full credit rather than dividing by zero.
+- The threshold has **no default**: switching Full Credit on reveals an empty field, and a blank threshold applies no scaling. `AdvancedOptions` keeps a local `fullCreditEnabled` flag for this, since `null` already means "off" and can't also mean "on but not yet typed".
 
 It is **independent of drop/downweight**, not a third member of the exclusive pair: those decide *which marks count*, this scales *the percentage they produce*, so "drop lowest 2 and 80% earns full credit" is expressible — which matches real iClicker schemes. `advancedOptionUpdate` therefore returns only the marks fields (`MarksPolicyFields`), so switching between drop and downweight leaves the threshold intact. It also applies to a single score, unlike drop and downweight.
 

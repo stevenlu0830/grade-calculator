@@ -52,7 +52,7 @@ const Index = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-foreground">UBC Grade Calculator</h1>
-                <p className="text-sm text-muted-foreground">Track your course grades</p>
+                <p className="text-sm text-muted-foreground"></p>
               </div>
             </div>
             <CourseToolbar

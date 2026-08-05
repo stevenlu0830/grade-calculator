@@ -81,6 +81,7 @@ The domain is Course → **Breakdown** → **Sub-breakdown**. Use those words in
 
 - "Component" means **React component** and nothing else. Never reintroduce it as a domain term.
 - New numeric fields use `NumberInput`, not raw `<Input type="number">`, so the scroll wheel can't silently rewrite a value.
+- No help-icon tooltips in forms — the `?` affordances were removed because they never opened. Put the explanation in the dialog description, or make the label say it.
 - Breakdown types and their singular forms live in `breakdownPresets.ts`. Add a preset there rather than hard-coding a label in a dialog.
 
 ## Naming & files

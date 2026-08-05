@@ -55,7 +55,8 @@ export const NO_POLICY: GradingPolicy = Object.freeze({
 export const DEFAULT_DROP_LOWEST_COUNT = 1;
 export const DEFAULT_DOWNWEIGHT_COUNT = 1;
 export const DEFAULT_DOWNWEIGHT_PERCENT = 50;
-export const DEFAULT_FULL_CREDIT_GRADE = 80;
+// Full credit has no default on purpose: the switch reveals an empty field so
+// the student states the threshold rather than accepting a guess.
 
 const PERCENT_MIN = 0;
 const PERCENT_MAX = 100;
