@@ -16,14 +16,19 @@ export const CSV_HEADERS = [
   'Drop Lowest',
   'Downweight Count',
   'Downweight %',
+  'Full Credit Grade (%)',
   'Sub-breakdown Name',
   'Marks Achieved',
   'Full Marks',
 ] as const;
 
-const EMPTY_ROW_TAIL = ['', '', ''];
-
 const optional = (value: number | null): string => value?.toString() ?? '';
+
+/** Pads a partial row out to the full column count, so adding a header can't desync rows. */
+const padRow = (cells: string[]): string[] => [
+  ...cells,
+  ...Array(Math.max(0, CSV_HEADERS.length - cells.length)).fill(''),
+];
 
 /** Wraps a cell in quotes only when it contains a delimiter, doubling any quotes. */
 function escapeCell(cell: string): string {
@@ -41,17 +46,18 @@ function breakdownCells(course: Course, breakdown: Breakdown, rowIndex: number):
     firstRowOnly(rowIndex, optional(breakdown.dropLowestCount)),
     firstRowOnly(rowIndex, optional(breakdown.downweightLowestCount)),
     firstRowOnly(rowIndex, optional(breakdown.downweightPercent)),
+    firstRowOnly(rowIndex, optional(breakdown.fullCreditGrade)),
   ];
 }
 
 function courseRows(course: Course): string[][] {
   if (course.breakdowns.length === 0) {
-    return [[course.name, '', '', '', '', '', '', '', '']];
+    return [padRow([course.name])];
   }
 
   return course.breakdowns.flatMap(breakdown => {
     if (breakdown.subBreakdowns.length === 0) {
-      return [[...breakdownCells(course, breakdown, 0), ...EMPTY_ROW_TAIL]];
+      return [padRow(breakdownCells(course, breakdown, 0))];
     }
 
     return breakdown.subBreakdowns.map((subBreakdown, index) => [

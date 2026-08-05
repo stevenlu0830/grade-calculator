@@ -16,8 +16,14 @@ export interface CourseStorage {
 
 export const STORAGE_KEY = 'ubc-grade-calculator-data';
 
-/** Bumped whenever the persisted shape changes; see `migrate`. */
-export const SCHEMA_VERSION = 2;
+/**
+ * Bumped whenever the persisted shape changes; see `migrate`.
+ *
+ * 1 → bare `Course[]` using "component" wording, `grade` as a percentage.
+ * 2 → `{ version, courses }` with breakdown wording and marks out of full marks.
+ * 3 → adds `fullCreditGrade`.
+ */
+export const SCHEMA_VERSION = 3;
 
 interface StoredData {
   version: number;
@@ -85,6 +91,7 @@ function migrateLegacy(courses: LegacyCourse[]): Course[] {
         dropLowestCount: legacyBreakdown.dropLowestCount ?? null,
         downweightLowestCount: legacyBreakdown.downweightLowestCount ?? null,
         downweightPercent: legacyBreakdown.downweightPercent ?? null,
+        fullCreditGrade: null,
         // Best available guess for auto-naming; the student can rename freely.
         subBreakdownLabel: name || 'Item',
         subBreakdowns,
@@ -95,17 +102,38 @@ function migrateLegacy(courses: LegacyCourse[]): Course[] {
   });
 }
 
-/** Accepts either the current envelope or bare v1 data. */
+/**
+ * Fills in fields added after a course was saved.
+ *
+ * Absent optional fields deserialise as `undefined`, and `undefined !== null`,
+ * so a nullability check like `fullCreditGrade !== null` would read a missing
+ * field as *set*. Normalising on load keeps every later check honest.
+ */
+function normalizeCourses(courses: Course[]): Course[] {
+  return courses.map(course => ({
+    ...course,
+    breakdowns: (course.breakdowns ?? []).map(breakdown => ({
+      ...breakdown,
+      fullCreditGrade: breakdown.fullCreditGrade ?? null,
+      subBreakdowns: (breakdown.subBreakdowns ?? []).map(sub => ({
+        ...sub,
+        fullMarks: sub.fullMarks ?? null,
+      })),
+    })),
+  }));
+}
+
+/** Accepts the current envelope, an older envelope, or bare v1 data. */
 export function migrate(raw: unknown): Course[] {
-  if (isLegacy(raw)) return migrateLegacy(raw);
+  if (isLegacy(raw)) return normalizeCourses(migrateLegacy(raw));
 
   if (raw !== null && typeof raw === 'object' && 'courses' in raw) {
     const stored = raw as StoredData;
-    return Array.isArray(stored.courses) ? stored.courses : [];
+    return Array.isArray(stored.courses) ? normalizeCourses(stored.courses) : [];
   }
 
   // An empty v1 array, or anything unrecognisable.
-  return Array.isArray(raw) ? (raw as Course[]) : [];
+  return Array.isArray(raw) ? normalizeCourses(raw as Course[]) : [];
 }
 
 /**

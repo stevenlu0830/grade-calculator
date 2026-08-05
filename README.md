@@ -12,7 +12,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 - **`localStorage` is the database.** One key, one JSON blob.
 - **All state in one hook**, instantiated once, prop-drilled down three levels.
 - **Marks-based**: a grade is total marks achieved over total marks available, so a 45/50 test outweighs a 9/10 quiz.
-- Supports drop-lowest and downweight-lowest grading policies, plus CSV round-trip and PDF export.
+- Supports drop-lowest, downweight-lowest and full-credit-threshold grading policies, plus CSV round-trip and PDF export.
 
 ## 2. Stack
 
@@ -26,7 +26,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Components | shadcn/ui over Radix | 48 vendored primitives, 14 in use |
 | PDF | `jspdf` + `jspdf-autotable` | |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | 194 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 235 tests in `src/test/`; React components untested |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template.
 
@@ -49,7 +49,7 @@ This project was scaffolded with Lovable ([project dashboard](https://lovable.de
 
 ```
 Course
- └── Breakdown          weight %, optional drop/downweight policy
+ └── Breakdown          weight %, optional grading policy (drop / downweight / full credit)
       └── SubBreakdown    name + marks achieved out of full marks
 ```
 
@@ -61,7 +61,7 @@ The exact shape persisted to `localStorage`:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "courses": [{
     "id": "8f14e45f-…",
     "name": "CPSC 121",
@@ -73,6 +73,7 @@ The exact shape persisted to `localStorage`:
       "dropLowestCount": 1,
       "downweightLowestCount": null,
       "downweightPercent": null,
+      "fullCreditGrade": null,
       "subBreakdownLabel": "Assignment",
       "subBreakdowns": [
         { "id": "…", "breakdownId": "b1c2d3e4-…", "name": "Assignment 1", "achievedMarks": 18, "fullMarks": 20 },
@@ -89,6 +90,7 @@ Things to notice:
 - **Both mark fields start blank.** `fullMarks` is `number | null`; a row with no full marks yet can't produce a score, so it's excluded from the totals until filled in. (Legacy data is the exception — see §5.)
 - **`achievedMarks: null`** on Assignment 2 means entered-but-ungraded. It's excluded from the totals rather than counted as zero, and its 25 marks don't drag the denominator either.
 - **Marks are never corrected.** A score above full marks is a valid bonus and pushes the breakdown past 100%; nothing is clamped on entry, on import, or when full marks change.
+- **`fullCreditGrade`** is the percentage that earns 100% for the breakdown, or `null`. Unlike drop/downweight it is *not* part of the mutually-exclusive pair — see §6.
 - **`subBreakdownLabel`** is the singular noun used to auto-name new rows ("Assignment" → "Assignment 3"). Stored rather than derived, because de-pluralising English by rule mangles Quizzes and WebWorks.
 
 **Nullability is semantic.** `achievedMarks`, `fullMarks` and `weight` are all `number | null`, where `null` = "the user hasn't entered this." A `0` is a real, meaningful zero. This distinction drives the whole UI: `null` renders as `—`, propagates through calculations, and excludes a row from totals. Preserve it — reads use `??`, never `||`.
@@ -100,8 +102,8 @@ Things to notice:
 - `useState<Course[]>` with a lazy initializer that reads through a `CourseStorage`.
 - A `useEffect` on `[courses]` writes the whole array back on every change — autosave is implicit and total; no component ever calls `localStorage` itself.
 - Persistence is injected, not imported: the hook takes a `CourseStorage` and defaults to `localCourseStorage`. Swapping in a server-backed or in-memory implementation touches no state logic. See [src/lib/courseStorage.ts](src/lib/courseStorage.ts).
-- Storage key: `ubc-grade-calculator-data`, written as `{ version, courses }` with `SCHEMA_VERSION = 2`. Read and write both degrade to console errors (private-mode and quota failures).
-- **Migration.** `migrate(raw)` in `courseStorage.ts` accepts either the current envelope or bare version-1 data (a `Course[]` using `components`/`subComponents`, where `grade` was a percentage). v1 rows are given `LEGACY_FULL_MARKS` (100), which makes them calculate to exactly the grade they did before; ids are preserved so nothing re-keys. New rows created today start blank instead. Covered by [courseStorage.test.ts](src/test/courseStorage.test.ts).
+- Storage key: `ubc-grade-calculator-data`, written as `{ version, courses }` with `SCHEMA_VERSION = 3`. Read and write both degrade to console errors (private-mode and quota failures).
+- **Migration.** `migrate(raw)` in `courseStorage.ts` accepts either the current envelope or bare version-1 data (a `Course[]` using `components`/`subComponents`, where `grade` was a percentage). v1 rows are given `LEGACY_FULL_MARKS` (100), which makes them calculate to exactly the grade they did before; ids are preserved so nothing re-keys. New rows created today start blank instead. A second pass, `normalizeCourses`, backfills fields added after a save — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, since `undefined !== null` would make every later nullability check read a missing field as *set*. Covered by [courseStorage.test.ts](src/test/courseStorage.test.ts).
 - IDs come from `createId()` in [src/lib/id.ts](src/lib/id.ts) — `crypto.randomUUID()`, with a `Math.random` fallback for non-DOM environments.
 - Nested updates go through the module-local `mapCourse` / `mapBreakdown` helpers, so each action stays a few lines rather than a four-deep `.map` pyramid.
 
@@ -129,6 +131,18 @@ The maths is pure and split across two modules. [gradeCalculations.ts](src/lib/g
    - **Downweight lowest N by P%** (`applyDownweightLowest`) — scales the N worst rows' marks *and* their full marks by `1 - P/100`, so the row shrinks rather than distorting the ratio. Returns `null` if every row is discounted to zero weight.
    - **Neither** — the plain total.
 4. Drop takes precedence if both are set — `getActiveAdvancedOption` encodes that, and the UI reads the same function, so the calculator and the toggles can't disagree.
+5. Finally, `applyFullCreditGrade` scales the result if a threshold is set.
+
+**Full credit grade.** A course might say "80% on the iClickers earns full marks". With a threshold `x`, the breakdown grade becomes `min(100, raw / x * 100)`:
+
+- At `x = 60`, a raw 60% → `60 / 60 × 100` = **100%**.
+- A raw 59% → `59 / 60 × 100` = **98.33%** (unrounded 98.333…).
+- A raw 80% → the bare ratio is 133%, but "or higher earns full credit" means it **caps at 100%**.
+- `x = 100` is the identity; `x = 0` awards full credit rather than dividing by zero.
+
+It is **independent of drop/downweight**, not a third member of the exclusive pair: those decide *which marks count*, this scales *the percentage they produce*, so "drop lowest 2 and 80% earns full credit" is expressible — which matches real iClicker schemes. `advancedOptionUpdate` therefore returns only the marks fields (`MarksPolicyFields`), so switching between drop and downweight leaves the threshold intact. It also applies to a single score, unlike drop and downweight.
+
+Note the interaction with bonus marks: a threshold caps the breakdown at 100%, so a 22/20 that normally reads 110% reads 100% once a threshold is set. With no threshold (the default) bonus marks still exceed 100% as before.
 
 Ranking is by percentage, not by raw marks lost: a 4/10 is dropped ahead of a 15/20, even though the 15/20 shed more marks. Tests pin this down.
 
@@ -250,7 +264,7 @@ Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
 2. **CSV newline handling** (§8) — a quoted field containing a line break tears across rows.
-3. **No component test coverage.** `src/lib/*` and the store hook are well covered (194 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
+3. **No component test coverage.** `src/lib/*` and the store hook are well covered (235 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
 6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. 30 shadcn primitives are also unused, though those tree-shake.
@@ -264,7 +278,8 @@ Ordered roughly by how likely each is to bite you.
 
 - **New grading policy** (e.g. "best N of M"): add fields to `Breakdown` in `types/grades.ts` → add the rule to `gradePolicies.ts` (an `applyBestOf` over `MarkPair[]`, a case in `getActiveAdvancedOption`, and one in `advancedOptionUpdate`) → add a `case` in `calculateBreakdownGrade`'s switch → add a switch to `AdvancedOptions` → add the columns to `CSV_HEADERS` and `COLUMN_ALIASES`. The switch is exhaustive over `AdvancedOption`, so TypeScript will point at every site you still need to touch.
 - **New breakdown type:** add an entry to `BREAKDOWN_PRESETS` in `breakdownPresets.ts` with its `singular`, **in alphabetical position** — a test enforces the ordering. The dialog and the CSV importer both read from there, so that's the only edit.
-- **Changing the persisted shape:** bump `SCHEMA_VERSION`, extend `migrate` in `courseStorage.ts`, and add a test asserting old data still calculates the same. Saved data is the one thing here that can't be regenerated.
+- **Changing the persisted shape:** bump `SCHEMA_VERSION`, extend `migrate`/`normalizeCourses` in `courseStorage.ts`, and add a test asserting old data still calculates the same. A field added without backfilling deserialises as `undefined`, which any `!== null` check reads as *set*. Saved data is the one thing here that can't be regenerated.
+- **Adding a CSV column:** add it to `CSV_HEADERS` and `COLUMN_ALIASES`, then check what the positional fallback hits in files that predate it — `toFloat` rejecting NaN is what stops a text column becoming a number.
 - **New route:** add `<Route>` in `App.tsx` above the `*` catch-all, create the page in `src/pages/`.
 - **Deeper store access:** convert `useGradeStore` into a Context provider rather than calling the hook twice (§5).
 - **New UI primitive:** `npx shadcn@latest add <name>` — never hand-write into `src/components/ui/`.
@@ -280,6 +295,9 @@ Ordered roughly by how likely each is to bite you.
 | Breakdown grade isn't the average of the row percentages | Working as designed — it's total marks over total available (§6). A 45/50 outweighs a 9/10 | `totalPercentage` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
 | A row shows a percentage but doesn't affect the grade | Its `fullMarks` is 0, so `getEnteredMarks` skips it | [gradeCalculations.ts](src/lib/gradeCalculations.ts), `getEnteredMarks` |
 | A grade reads over 100% | By design — bonus marks are allowed and nothing is clamped | `getEnteredMarks` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
+| Bonus marks stopped exceeding 100% | A full credit threshold is set, which caps the breakdown (§6) | `applyFullCreditGrade` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
+| Setting a marks policy cleared the full credit threshold | `advancedOptionUpdate` must return only `MarksPolicyFields` and be spread, not assigned | [gradePolicies.ts](src/lib/gradePolicies.ts) |
+| An imported CSV has a nonsense threshold | A pre-column file fell through to the positional fallback; `toFloat` must reject NaN | [csvImport.ts](src/lib/csvImport.ts) |
 | A row with marks entered doesn't count | Its full marks are still blank, or are 0 | `getEnteredMarks` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
 | Displayed figures don't add to 100% | Expected — each is rounded to 2 dp independently (§6) | `DISPLAY_DECIMALS` in [gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Scrolling the page changed a mark | A raw `<Input type="number">` slipped in instead of `NumberInput` | grep for `type="number"` outside [NumberInput.tsx](src/components/NumberInput.tsx) |
@@ -313,6 +331,7 @@ Terms are used consistently across code, UI, and CSV headers — keep it that wa
 - **Drop lowest N** — exclude the N worst-scoring sub-breakdowns, ranked by percentage. Their full marks leave the total too. Always keeps ≥1.
 - **Downweight lowest N by P%** — scale the N worst-scoring sub-breakdowns' marks *and* full marks by `1 - P/100`.
 - **Advanced option** — the drop/downweight choice. Derived from field nullability at render time, never stored.
-- **Grading policy** (`GradingPolicy`) — the three policy fields on their own, so the same UI can edit a saved breakdown or a not-yet-created draft.
+- **Grading policy** (`GradingPolicy`) — the four policy fields on their own, so the same UI can edit a saved breakdown or a not-yet-created draft.
+- **Full credit grade** (`fullCreditGrade`) — the percentage that earns 100% for a breakdown. Lower scores scale up proportionally; at or above it, full credit. Combines with a marks policy.
 - **Sub-breakdown label** (`subBreakdownLabel`) — the singular noun used to auto-name rows ("Assignment" → "Assignment 3").
 - **Grade band** — the 90/80/70/60 colour thresholds. Distinct from the UBC letter-grade scale (§6).

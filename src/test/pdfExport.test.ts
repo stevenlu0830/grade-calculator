@@ -16,6 +16,7 @@ const course: Course = {
       dropLowestCount: 1,
       downweightLowestCount: null,
       downweightPercent: null,
+      fullCreditGrade: null,
       subBreakdownLabel: 'Assignment',
       subBreakdowns: [
         { id: 's1', breakdownId: 'b-1', name: 'Assignment 1', achievedMarks: 4, fullMarks: 10 },

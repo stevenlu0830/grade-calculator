@@ -9,6 +9,7 @@ import {
   advancedOptionUpdate,
   applyDownweightLowest,
   applyDropLowest,
+  applyFullCreditGrade,
   clampPercent,
   describePolicy,
   getActiveAdvancedOption,
@@ -24,6 +25,7 @@ const breakdown = (overrides: Partial<Breakdown> = {}): Breakdown => ({
   dropLowestCount: null,
   downweightLowestCount: null,
   downweightPercent: null,
+  fullCreditGrade: null,
   subBreakdownLabel: 'Item',
   subBreakdowns: [],
   ...overrides,
@@ -73,7 +75,7 @@ describe('advancedOptionUpdate', () => {
     });
   });
 
-  it('clears everything for none', () => {
+  it('clears only the marks fields for none, leaving full credit alone', () => {
     expect(advancedOptionUpdate('none')).toEqual({
       dropLowestCount: null,
       downweightLowestCount: null,
@@ -116,12 +118,14 @@ describe('describePolicy', () => {
   });
 
   it('describes drop lowest', () => {
-    expect(describePolicy(advancedOptionUpdate('dropLowest'))).toBe('Drop lowest 1');
+    expect(describePolicy({ ...NO_POLICY, ...advancedOptionUpdate('dropLowest') })).toBe('Drop lowest 1');
     expect(describePolicy({ ...NO_POLICY, dropLowestCount: 3 })).toBe('Drop lowest 3');
   });
 
   it('describes downweight', () => {
-    expect(describePolicy(advancedOptionUpdate('downweight'))).toBe('Downweight lowest 1 by 50%');
+    expect(
+      describePolicy({ ...NO_POLICY, ...advancedOptionUpdate('downweight') })
+    ).toBe('Downweight lowest 1 by 50%');
   });
 
   it('is null for a zero count, which has no effect', () => {
@@ -135,8 +139,96 @@ describe('describePolicy', () => {
   });
 
   it('prefers drop when both are set, matching the calculator', () => {
-    const both = { dropLowestCount: 1, downweightLowestCount: 2, downweightPercent: 50 };
+    const both = { ...NO_POLICY, dropLowestCount: 1, downweightLowestCount: 2, downweightPercent: 50 };
     expect(describePolicy(both)).toBe('Drop lowest 1');
+  });
+});
+
+describe('applyFullCreditGrade', () => {
+  it('is a no-op when unset', () => {
+    expect(applyFullCreditGrade(59, null)).toBe(59);
+  });
+
+  it('is also a no-op for a missing field, not a division by undefined', () => {
+    // Data saved before the field existed deserialises as `undefined`.
+    expect(applyFullCreditGrade(59, undefined)).toBe(59);
+  });
+
+  it('scales below the threshold', () => {
+    expect(applyFullCreditGrade(59, 60)).toBeCloseTo(98.33333333333333, 10);
+    expect(applyFullCreditGrade(30, 60)).toBe(50);
+  });
+
+  it('hits exactly 100 at the threshold', () => {
+    expect(applyFullCreditGrade(60, 60)).toBe(100);
+  });
+
+  it('caps above the threshold', () => {
+    expect(applyFullCreditGrade(80, 60)).toBe(100);
+    expect(applyFullCreditGrade(1000, 60)).toBe(100);
+  });
+
+  it('is the identity at 100', () => {
+    expect(applyFullCreditGrade(42.5, 100)).toBe(42.5);
+  });
+
+  it('awards full credit at 0 rather than dividing by zero', () => {
+    expect(applyFullCreditGrade(0, 0)).toBe(100);
+    expect(Number.isFinite(applyFullCreditGrade(50, 0))).toBe(true);
+  });
+
+  it('keeps a zero score at zero', () => {
+    expect(applyFullCreditGrade(0, 60)).toBe(0);
+  });
+});
+
+describe('describePolicy with full credit', () => {
+  it('describes full credit on its own', () => {
+    expect(describePolicy({ ...NO_POLICY, fullCreditGrade: 80 })).toBe('80% for full credit');
+  });
+
+  it('reports a threshold of 0, which is meaningful', () => {
+    expect(describePolicy({ ...NO_POLICY, fullCreditGrade: 0 })).toBe('0% for full credit');
+  });
+
+  it('joins full credit with a marks policy, since they combine', () => {
+    expect(describePolicy({ ...NO_POLICY, dropLowestCount: 2, fullCreditGrade: 80 })).toBe(
+      'Drop lowest 2 · 80% for full credit'
+    );
+  });
+
+  it('joins with downweight too', () => {
+    expect(
+      describePolicy({
+        ...NO_POLICY,
+        downweightLowestCount: 1,
+        downweightPercent: 50,
+        fullCreditGrade: 90,
+      })
+    ).toBe('Downweight lowest 1 by 50% · 90% for full credit');
+  });
+});
+
+describe('advancedOptionUpdate leaves full credit alone', () => {
+  it('returns only the marks fields', () => {
+    expect(Object.keys(advancedOptionUpdate('dropLowest')).sort()).toEqual([
+      'downweightLowestCount',
+      'downweightPercent',
+      'dropLowestCount',
+    ]);
+  });
+
+  it('preserves full credit when spread over an existing policy', () => {
+    const withFullCredit = { ...NO_POLICY, fullCreditGrade: 75 };
+    const switched = { ...withFullCredit, ...advancedOptionUpdate('downweight') };
+    expect(switched.fullCreditGrade).toBe(75);
+    expect(switched.downweightLowestCount).toBe(DEFAULT_DOWNWEIGHT_COUNT);
+  });
+
+  it('preserves full credit when turning a marks policy off', () => {
+    const active = { ...NO_POLICY, dropLowestCount: 2, fullCreditGrade: 75 };
+    const cleared = { ...active, ...advancedOptionUpdate('none') };
+    expect(cleared).toMatchObject({ dropLowestCount: null, fullCreditGrade: 75 });
   });
 });
 

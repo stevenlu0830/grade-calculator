@@ -97,6 +97,88 @@ describe('migrate', () => {
     });
   });
 
+  describe('fields added after a save', () => {
+    /** A version-2 envelope: breakdown wording, but no `fullCreditGrade`. */
+    const v2 = {
+      version: 2,
+      courses: [
+        {
+          id: 'c1',
+          name: 'CPSC 121',
+          breakdowns: [
+            {
+              id: 'b1',
+              courseId: 'c1',
+              name: 'Assignments',
+              weight: 100,
+              dropLowestCount: 1,
+              downweightLowestCount: null,
+              downweightPercent: null,
+              subBreakdownLabel: 'Assignment',
+              subBreakdowns: [
+                { id: 's1', breakdownId: 'b1', name: 'A1', achievedMarks: 59, fullMarks: 100 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    it('fills a missing fullCreditGrade with null, not undefined', () => {
+      const [course] = migrate(v2);
+      const breakdown = course.breakdowns[0];
+
+      expect(breakdown.fullCreditGrade).toBeNull();
+      // `undefined !== null` would make a nullability check read it as *set*.
+      expect(breakdown.fullCreditGrade).not.toBeUndefined();
+      expect('fullCreditGrade' in breakdown).toBe(true);
+    });
+
+    it('leaves the grade unchanged, since full credit defaults to off', () => {
+      const [course] = migrate(v2);
+      expect(calculateBreakdownGrade(course.breakdowns[0])).toBe(59);
+    });
+
+    it('keeps an explicit fullCreditGrade when one is present', () => {
+      const withPolicy = {
+        version: 3,
+        courses: [
+          {
+            ...v2.courses[0],
+            breakdowns: [{ ...v2.courses[0].breakdowns[0], fullCreditGrade: 60 }],
+          },
+        ],
+      };
+      const [course] = migrate(withPolicy);
+      expect(course.breakdowns[0].fullCreditGrade).toBe(60);
+      expect(calculateBreakdownGrade(course.breakdowns[0])).toBeCloseTo(98.33333333333333, 10);
+    });
+
+    it('fills a missing fullMarks with null too', () => {
+      const noFullMarks = {
+        version: 2,
+        courses: [
+          {
+            ...v2.courses[0],
+            breakdowns: [
+              {
+                ...v2.courses[0].breakdowns[0],
+                subBreakdowns: [{ id: 's1', breakdownId: 'b1', name: 'A1', achievedMarks: 5 }],
+              },
+            ],
+          },
+        ],
+      };
+      const [course] = migrate(noFullMarks);
+      expect(course.breakdowns[0].subBreakdowns[0].fullMarks).toBeNull();
+    });
+
+    it('gives v1 data the new field as well', () => {
+      const [course] = migrate(legacyData);
+      expect(course.breakdowns[0].fullCreditGrade).toBeNull();
+    });
+  });
+
   describe('from the current envelope', () => {
     it('unwraps the courses array', () => {
       const current = {

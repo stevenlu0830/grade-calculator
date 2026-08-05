@@ -20,6 +20,13 @@ export interface Breakdown {
   dropLowestCount: number | null;
   downweightLowestCount: number | null;
   downweightPercent: number | null;
+  /**
+   * The percentage that earns full credit, 0–100. `null` when unused.
+   *
+   * Independent of drop/downweight: those decide which marks count, this scales
+   * the percentage they produce.
+   */
+  fullCreditGrade: number | null;
   /** Singular noun used to auto-name new sub-breakdowns, e.g. "Assignment" → "Assignment 3". */
   subBreakdownLabel: string;
   subBreakdowns: SubBreakdown[];

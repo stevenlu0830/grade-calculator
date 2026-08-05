@@ -30,6 +30,7 @@ const makeBreakdown = (entries: Entry[], overrides: Partial<Breakdown> = {}): Br
     dropLowestCount: null,
     downweightLowestCount: null,
     downweightPercent: null,
+    fullCreditGrade: null,
     subBreakdownLabel: 'Item',
     subBreakdowns,
     ...overrides,
@@ -219,6 +220,105 @@ describe('calculateBreakdownGrade', () => {
       { dropLowestCount: 1, downweightLowestCount: 2, downweightPercent: 50 }
     );
     expect(calculateBreakdownGrade(breakdown)).toBe(90);
+  });
+
+  describe('full credit grade', () => {
+    // The two worked examples from the spec.
+    it('awards exactly full credit at the threshold', () => {
+      const breakdown = makeBreakdown([[60, 100]], { fullCreditGrade: 60 });
+      expect(calculateBreakdownGrade(breakdown)).toBe(100);
+    });
+
+    it('scales a score just under the threshold', () => {
+      // (59/100 * 100) / 60 * 100 = 98.333…
+      const breakdown = makeBreakdown([[59, 100]], { fullCreditGrade: 60 });
+      expect(calculateBreakdownGrade(breakdown)).toBeCloseTo(98.33333333333333, 10);
+      expect((calculateBreakdownGrade(breakdown) as number).toFixed(3)).toBe('98.333');
+    });
+
+    it('caps at full credit above the threshold', () => {
+      // "or higher" earns full credit, so 80/100 against a 60% threshold is 100%,
+      // not the 133% the bare ratio would give.
+      const breakdown = makeBreakdown([[80, 100]], { fullCreditGrade: 60 });
+      expect(calculateBreakdownGrade(breakdown)).toBe(100);
+    });
+
+    it('is the identity at 100%', () => {
+      const breakdown = makeBreakdown([[59, 100]], { fullCreditGrade: 100 });
+      expect(calculateBreakdownGrade(breakdown)).toBe(59);
+    });
+
+    it('awards full credit for a threshold of 0, rather than dividing by zero', () => {
+      const breakdown = makeBreakdown([[1, 100]], { fullCreditGrade: 0 });
+      expect(calculateBreakdownGrade(breakdown)).toBe(100);
+    });
+
+    it('still returns null when nothing is graded', () => {
+      expect(calculateBreakdownGrade(makeBreakdown([[null, 10]], { fullCreditGrade: 60 }))).toBeNull();
+    });
+
+    it('applies to a single score, unlike drop and downweight', () => {
+      const breakdown = makeBreakdown([[30, 100]], { fullCreditGrade: 60 });
+      expect(calculateBreakdownGrade(breakdown)).toBe(50);
+    });
+
+    it('scales the total, so marks weighting still applies first', () => {
+      // (9 + 30) / (10 + 50) = 65%, then / 80 * 100 = 81.25%
+      const breakdown = makeBreakdown(
+        [
+          [9, 10],
+          [30, 50],
+        ],
+        { fullCreditGrade: 80 }
+      );
+      expect(calculateBreakdownGrade(breakdown)).toBe(81.25);
+    });
+
+    it('composes with drop lowest, applying after the drop', () => {
+      // Drop 4/10, leaving 28/30 = 93.33%; / 80 * 100 = 116.67% -> capped to 100.
+      const breakdown = makeBreakdown(
+        [
+          [4, 10],
+          [18, 20],
+          [10, 10],
+        ],
+        { dropLowestCount: 1, fullCreditGrade: 80 }
+      );
+      expect(calculateBreakdownGrade(breakdown)).toBe(100);
+    });
+
+    it('composes with drop lowest below the threshold too', () => {
+      // Drop 0/10, leaving 12/20 = 60%; / 80 * 100 = 75%.
+      const breakdown = makeBreakdown(
+        [
+          [0, 10],
+          [12, 20],
+        ],
+        { dropLowestCount: 1, fullCreditGrade: 80 }
+      );
+      expect(calculateBreakdownGrade(breakdown)).toBe(75);
+    });
+
+    it('composes with downweight', () => {
+      // 6/10 halved + 10/10 -> 13/15 = 86.66%; / 90 * 100 = 96.30%
+      const breakdown = makeBreakdown(
+        [
+          [6, 10],
+          [10, 10],
+        ],
+        { downweightLowestCount: 1, downweightPercent: 50, fullCreditGrade: 90 }
+      );
+      expect(calculateBreakdownGrade(breakdown)).toBeCloseTo(96.2962962962963, 8);
+    });
+
+    it('is inert when unset, so bonus marks still exceed 100%', () => {
+      expect(calculateBreakdownGrade(makeBreakdown([[22, 20]]))).toBeGreaterThan(100);
+    });
+
+    it('carries through to the course grade', () => {
+      const breakdowns = [makeBreakdown([[59, 100]], { weight: 100, fullCreditGrade: 60 })];
+      expect(calculateCourseGrade(breakdowns)).toBeCloseTo(98.33333333333333, 10);
+    });
   });
 
   // The marks model must reduce to the old average when nothing is out of a

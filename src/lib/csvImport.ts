@@ -50,6 +50,7 @@ type ColumnKey =
   | 'dropLowest'
   | 'downweightCount'
   | 'downweightPercent'
+  | 'fullCreditGrade'
   | 'subName'
   | 'achievedMarks'
   | 'fullMarks';
@@ -70,6 +71,7 @@ const COLUMN_ALIASES: Record<ColumnKey, readonly string[]> = {
   dropLowest: ['Drop Lowest'],
   downweightCount: ['Downweight Count'],
   downweightPercent: ['Downweight %'],
+  fullCreditGrade: ['Full Credit Grade (%)'],
   subName: ['Sub-breakdown Name', 'Sub-component Name'],
   achievedMarks: ['Marks Achieved', 'Grade'],
   fullMarks: ['Full Marks'],
@@ -97,8 +99,22 @@ function resolveColumns(header: string[]): ColumnMap {
   return Object.fromEntries(COLUMN_KEYS.map(key => [key, resolve(key)])) as ColumnMap;
 }
 
-const toFloat = (value: string): number | null => (value ? parseFloat(value) : null);
-const toInt = (value: string): number | null => (value ? parseInt(value) : null);
+/**
+ * Numbers, or `null` for anything that isn't one.
+ *
+ * The NaN guard matters: when a named header lacks a column we added later, the
+ * positional fallback can land on a text column instead. A file exported before
+ * `Full Credit Grade (%)` existed would otherwise parse a sub-breakdown name and
+ * store `NaN`, which poisons every calculation downstream.
+ */
+const toNumber = (value: string, parse: (v: string) => number): number | null => {
+  if (!value) return null;
+  const parsed = parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const toFloat = (value: string): number | null => toNumber(value, parseFloat);
+const toInt = (value: string): number | null => toNumber(value, v => parseInt(v, 10));
 
 function createBreakdown(
   courseId: string,
@@ -114,6 +130,7 @@ function createBreakdown(
     dropLowestCount: toInt(cell(col.dropLowest)),
     downweightLowestCount: toInt(cell(col.downweightCount)),
     downweightPercent: toFloat(cell(col.downweightPercent)),
+    fullCreditGrade: toFloat(cell(col.fullCreditGrade)),
     subBreakdownLabel: presetFor(name).singular,
     subBreakdowns: [],
   };

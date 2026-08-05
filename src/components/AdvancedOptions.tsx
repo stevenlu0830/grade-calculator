@@ -3,6 +3,7 @@ import {
   DEFAULT_DOWNWEIGHT_COUNT,
   DEFAULT_DOWNWEIGHT_PERCENT,
   DEFAULT_DROP_LOWEST_COUNT,
+  DEFAULT_FULL_CREDIT_GRADE,
   GradingPolicy,
   advancedOptionUpdate,
   clampPercent,
@@ -30,12 +31,16 @@ interface AdvancedOptionsProps {
 export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
   const activeOption = getActiveAdvancedOption(policy);
 
-  // Turning a policy on clears the other; turning it off falls back to 'none'.
+  // Turning a marks policy on clears the other; turning it off falls back to
+  // 'none'. Spread over the existing policy so full credit survives the switch.
   const toggleOption = (option: AdvancedOption) => (enabled: boolean) =>
-    onChange(advancedOptionUpdate(enabled ? option : 'none'));
+    onChange({ ...policy, ...advancedOptionUpdate(enabled ? option : 'none') });
 
-  const setField = (field: keyof GradingPolicy, value: number) =>
+  const setField = (field: keyof GradingPolicy, value: number | null) =>
     onChange({ ...policy, [field]: value });
+
+  const toggleFullCredit = (enabled: boolean) =>
+    setField('fullCreditGrade', enabled ? DEFAULT_FULL_CREDIT_GRADE : null);
 
   return (
     <div className="space-y-4">
@@ -132,6 +137,51 @@ export function AdvancedOptions({ policy, onChange }: AdvancedOptionsProps) {
               aria-label="Downweight percentage"
             />
             <Label className="text-sm text-muted-foreground">%</Label>
+          </div>
+        )}
+      </div>
+
+      {/*
+        Full credit is not part of the mutually-exclusive pair above — it scales
+        whatever percentage they produce, so it composes with either. Hence no
+        `disabled` here.
+      */}
+      <div className="flex items-start gap-4 pt-1 border-t border-border">
+        <div className="flex items-center gap-2 min-w-[160px] pt-3">
+          <Switch
+            checked={policy.fullCreditGrade !== null}
+            onCheckedChange={toggleFullCredit}
+            aria-label="Full credit grade"
+          />
+          <Label className="text-sm font-medium flex items-center gap-1.5">
+            Full Credit
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p>
+                  Reaching this percentage earns 100% for the breakdown, and lower scores
+                  scale up proportionally. With 60% for full credit, 59/100 becomes
+                  59 / 60 = 98.33%. Combines with the options above.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </Label>
+        </div>
+        {policy.fullCreditGrade !== null && (
+          <div className="flex items-center gap-2 pt-3 animate-fade-in">
+            <NumberInput
+              min={0}
+              max={100}
+              value={policy.fullCreditGrade}
+              onChange={e =>
+                setField('fullCreditGrade', clampPercent(parseFloat(e.target.value) || 0))
+              }
+              className="w-16 h-8 text-center"
+              aria-label="Full credit percentage"
+            />
+            <Label className="text-sm text-muted-foreground">% earns full credit</Label>
           </div>
         )}
       </div>

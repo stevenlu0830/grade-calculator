@@ -4,6 +4,7 @@ import {
   MarkPair,
   applyDownweightLowest,
   applyDropLowest,
+  applyFullCreditGrade,
   getActiveAdvancedOption,
   sortByPercentage,
   totalPercentage,
@@ -77,6 +78,16 @@ export function getEnteredMarks(subBreakdowns: SubBreakdown[]): MarkPair[] {
  * propagates as "no grade" rather than as a zero.
  */
 export function calculateBreakdownGrade(breakdown: Breakdown): number | null {
+  const total = totalMarksPercentage(breakdown);
+  if (total === null) return null;
+
+  // Full credit scales the finished percentage, so it applies however many
+  // scores there are and whichever marks policy produced the total.
+  return applyFullCreditGrade(total, breakdown.fullCreditGrade);
+}
+
+/** The marks total before any full-credit scaling. */
+function totalMarksPercentage(breakdown: Breakdown): number | null {
   const pairs = getEnteredMarks(breakdown.subBreakdowns);
 
   if (pairs.length === 0) return null;

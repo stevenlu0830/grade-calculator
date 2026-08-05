@@ -25,7 +25,19 @@ export interface GradingPolicy {
   dropLowestCount: number | null;
   downweightLowestCount: number | null;
   downweightPercent: number | null;
+  fullCreditGrade: number | null;
 }
+
+/**
+ * The mutually-exclusive pair: which marks count towards the total.
+ *
+ * `fullCreditGrade` is deliberately outside this group — it scales whatever
+ * percentage those produce, so it composes with either of them.
+ */
+export type MarksPolicyFields = Pick<
+  GradingPolicy,
+  'dropLowestCount' | 'downweightLowestCount' | 'downweightPercent'
+>;
 
 /**
  * No policy applied — the starting point for a new breakdown.
@@ -37,11 +49,13 @@ export const NO_POLICY: GradingPolicy = Object.freeze({
   dropLowestCount: null,
   downweightLowestCount: null,
   downweightPercent: null,
+  fullCreditGrade: null,
 });
 
 export const DEFAULT_DROP_LOWEST_COUNT = 1;
 export const DEFAULT_DOWNWEIGHT_COUNT = 1;
 export const DEFAULT_DOWNWEIGHT_PERCENT = 50;
+export const DEFAULT_FULL_CREDIT_GRADE = 80;
 
 const PERCENT_MIN = 0;
 const PERCENT_MAX = 100;
@@ -64,10 +78,13 @@ export function getActiveAdvancedOption(policy: GradingPolicy): AdvancedOption {
 }
 
 /**
- * The complete policy for `option`, with whichever fields it replaces cleared.
+ * The marks-selection fields for `option`, with whichever it replaces cleared.
  * Keeps mutual exclusivity out of the toggle handlers.
+ *
+ * Returns only the exclusive pair, so spreading it over an existing policy
+ * leaves `fullCreditGrade` untouched.
  */
-export function advancedOptionUpdate(option: AdvancedOption): GradingPolicy {
+export function advancedOptionUpdate(option: AdvancedOption): MarksPolicyFields {
   switch (option) {
     case 'dropLowest':
       return {
@@ -83,26 +100,56 @@ export function advancedOptionUpdate(option: AdvancedOption): GradingPolicy {
       };
     case 'none':
       // A fresh object, so callers can treat every result as their own.
-      return { ...NO_POLICY };
+      return { dropLowestCount: null, downweightLowestCount: null, downweightPercent: null };
   }
 }
 
 /**
- * A one-line summary of an active policy, or `null` when none applies.
+ * Scales a breakdown percentage so that `fullCreditGrade` earns 100%.
  *
- * Shared by the breakdown card and the PDF report so the two always describe a
- * policy the same way.
+ * A course might say "80% on the iClickers earns you the full marks". With
+ * `x = 80`, a raw 60% becomes `60 / 80 * 100 = 75%`, and anything at or above
+ * 80% caps at full credit — which is what "or higher" means.
+ *
+ * `x = 0` would divide by zero; since every score already clears a threshold of
+ * zero, it simply awards full credit.
+ */
+export function applyFullCreditGrade(
+  percentage: number,
+  fullCreditGrade: number | null | undefined
+): number {
+  if (fullCreditGrade === null || fullCreditGrade === undefined) return percentage;
+  if (fullCreditGrade <= 0) return PERCENT_MAX;
+  return Math.min(PERCENT_MAX, (percentage / fullCreditGrade) * PERCENT_MAX);
+}
+
+/**
+ * A one-line summary of the active policy, or `null` when none applies.
+ *
+ * Full credit can combine with a marks policy, so parts are joined rather than
+ * returned first-match-wins. Shared by the breakdown card and the PDF report so
+ * the two always describe a policy the same way.
  */
 export function describePolicy(policy: GradingPolicy): string | null {
-  const { dropLowestCount, downweightLowestCount, downweightPercent } = policy;
+  const { dropLowestCount, downweightLowestCount, downweightPercent, fullCreditGrade } = policy;
+  const parts: string[] = [];
 
   if (dropLowestCount && dropLowestCount > 0) {
-    return `Drop lowest ${dropLowestCount}`;
+    parts.push(`Drop lowest ${dropLowestCount}`);
+  } else if (
+    downweightLowestCount &&
+    downweightLowestCount > 0 &&
+    downweightPercent &&
+    downweightPercent > 0
+  ) {
+    parts.push(`Downweight lowest ${downweightLowestCount} by ${downweightPercent}%`);
   }
-  if (downweightLowestCount && downweightLowestCount > 0 && downweightPercent && downweightPercent > 0) {
-    return `Downweight lowest ${downweightLowestCount} by ${downweightPercent}%`;
+
+  if (fullCreditGrade !== null && fullCreditGrade !== undefined) {
+    parts.push(`${fullCreditGrade}% for full credit`);
   }
-  return null;
+
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** A single item's score as a percentage, used only for ranking. */
