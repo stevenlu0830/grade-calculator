@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useGradeStore } from '@/hooks/useGradeStore';
-import { useCsvImport } from '@/hooks/useCsvImport';
+import { useProgressFile } from '@/hooks/useProgressFile';
 import { CourseSection } from '@/components/CourseSection';
 import { CourseToolbar } from '@/components/CourseToolbar';
 import { NewCourseDialog } from '@/components/NewCourseDialog';
 import { Button } from '@/components/ui/button';
 import { DISPLAY_DECIMALS } from '@/lib/gradeFormatting';
-import { GraduationCap, Plus, Upload } from 'lucide-react';
+import { PROGRESS_FILE_ACCEPT } from '@/lib/progressFile';
+import { GraduationCap, Plus, RotateCcw } from 'lucide-react';
 
 const Index = () => {
   const [newCourseOpen, setNewCourseOpen] = useState(false);
@@ -25,7 +26,10 @@ const Index = () => {
     importCourses,
   } = useGradeStore();
 
-  const { inputRef, openFilePicker, handleFileChange } = useCsvImport(importCourses);
+  const { inputRef, saveProgress, reloadProgress, handleFileChange } = useProgressFile(
+    courses,
+    importCourses
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -33,7 +37,8 @@ const Index = () => {
         type="file"
         ref={inputRef}
         onChange={handleFileChange}
-        accept=".csv"
+        accept={PROGRESS_FILE_ACCEPT}
+        multiple
         className="hidden"
       />
 
@@ -56,8 +61,8 @@ const Index = () => {
               </div>
             </div>
             <CourseToolbar
-              courses={courses}
-              onImportClick={openFilePicker}
+              onReloadClick={reloadProgress}
+              onSaveClick={saveProgress}
               onAddCourse={() => setNewCourseOpen(true)}
             />
           </div>
@@ -82,9 +87,9 @@ const Index = () => {
               Add your first course to start calculating your grades in real-time.
             </p>
             <div className="flex gap-3">
-              <Button variant="outline" onClick={openFilePicker}>
-                <Upload className="h-5 w-5 mr-2" />
-                Import from CSV
+              <Button variant="outline" onClick={reloadProgress}>
+                <RotateCcw className="h-5 w-5 mr-2" />
+                Reload Progress
               </Button>
               <Button size="lg" onClick={() => setNewCourseOpen(true)}>
                 <Plus className="h-5 w-5 mr-2" />

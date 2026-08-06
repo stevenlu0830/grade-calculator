@@ -101,7 +101,7 @@ The domain is Course → **Breakdown** → **Sub-breakdown**. Use those words in
 
 - Vitest + jsdom, globals enabled; the existing files import `describe`/`it`/`expect` explicitly — match that.
 - **All tests live in `src/test/`**, named `<module>.test.ts` after the module under test. Never colocate beside source.
-- Tests import through the `@/` alias (`@/lib/csvExport`), never with relative paths.
+- Tests import through the `@/` alias (`@/lib/progressFile`), never with relative paths.
 - Test the pure functions; that's what the pure/effectful split is for. Components are currently untested.
 - Changing behaviour deliberately? Update the test in the same commit and say why in the message. A characterization test that starts failing is either a regression or a decision — never noise to silence.
 

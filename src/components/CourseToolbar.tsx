@@ -1,58 +1,25 @@
-import { Course } from '@/types/grades';
-import { exportToCSV } from '@/lib/csvExport';
-import { exportToPDF } from '@/lib/pdfExport';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Download, FileSpreadsheet, FileText, Plus, Upload } from 'lucide-react';
-import { toast } from 'sonner';
+import { Plus, RotateCcw, Save } from 'lucide-react';
 
 interface CourseToolbarProps {
-  courses: Course[];
-  onImportClick: () => void;
+  onReloadClick: () => void;
+  onSaveClick: () => void;
   onAddCourse: () => void;
 }
 
-/** Header actions: import, export, and adding a course. */
-export function CourseToolbar({ courses, onImportClick, onAddCourse }: CourseToolbarProps) {
-  const exportWith = (exporter: (courses: Course[]) => void, label: string) => () => {
-    if (courses.length === 0) {
-      toast.error('No courses to export');
-      return;
-    }
-    exporter(courses);
-    toast.success(`Exported to ${label}`);
-  };
-
+/** Header actions: reload saved progress, save progress, and add a course. */
+export function CourseToolbar({ onReloadClick, onSaveClick, onAddCourse }: CourseToolbarProps) {
   return (
     <div className="flex items-center gap-2">
-      <Button variant="outline" onClick={onImportClick}>
-        <Upload className="h-4 w-4 mr-2" />
-        Import
+      <Button variant="outline" onClick={onReloadClick}>
+        <RotateCcw className="h-4 w-4 mr-2" />
+        Reload Progress
       </Button>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={exportWith(exportToCSV, 'CSV')}>
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Export as CSV
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={exportWith(exportToPDF, 'PDF')}>
-            <FileText className="h-4 w-4 mr-2" />
-            Export as PDF
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Button variant="outline" onClick={onSaveClick}>
+        <Save className="h-4 w-4 mr-2" />
+        Save Progress
+      </Button>
 
       <Button onClick={onAddCourse}>
         <Plus className="h-4 w-4 mr-2" />

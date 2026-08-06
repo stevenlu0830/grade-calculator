@@ -8,11 +8,11 @@
 A single-page, client-only calculator for UBC-style weighted course grades. A student enters courses → weighted **breakdowns** (e.g. "Assignments 30%") → **sub-breakdowns** (individual assignments, each scored out of its own marks), and sees breakdown grades, weighted contributions, and a final letter grade recompute live.
 
 **Defining characteristics:**
-- **Zero backend.** No API, no auth, no telemetry, no network calls at runtime. The only external fetch is a Google Fonts stylesheet in `src/index.css`.
+- **Almost zero backend.** No auth, no telemetry, no third-party calls. The one exception is a local `/api/progress` route served by the Vite dev server so Save/Reload can touch `progresses/` on disk (§8) — it doesn't exist in a static build. The only external fetch is a Google Fonts stylesheet in `src/index.css`.
 - **`localStorage` is the database.** One key, one JSON blob.
 - **All state in one hook**, instantiated once, prop-drilled down three levels.
 - **Marks-based**: a grade is total marks achieved over total marks available, so a 45/50 test outweighs a 9/10 quiz.
-- Supports drop-lowest, downweight-lowest and full-credit-threshold grading policies, plus CSV round-trip and PDF export.
+- Supports drop-lowest, downweight-lowest and full-credit-threshold grading policies, plus saving each course to its own JSON file in a `progresses/` folder.
 
 ## 2. Stack
 
@@ -23,12 +23,11 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | UI | React 18 | No Suspense, no server components |
 | Routing | react-router-dom 6 | Two routes; effectively a single page |
 | Styling | Tailwind 3 + CSS variables | shadcn/ui `default` style, slate base |
-| Components | shadcn/ui over Radix | 48 vendored primitives, 14 in use |
-| PDF | `jspdf` + `jspdf-autotable` | |
+| Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | 235 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 240 tests in `src/test/`; React components untested |
 
-**Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template.
+**Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template. `jspdf`/`jspdf-autotable` are now unused too, since PDF export was removed — still in `package.json`, no longer in the bundle.
 
 ## 3. Running it
 
@@ -57,7 +56,7 @@ Course
 
 Defined in [src/types/grades.ts](src/types/grades.ts). Children carry denormalized parent IDs (`breakdownId`, `courseId`) — currently unused for lookups, since every mutation walks the tree by ID from the root.
 
-**A note on the vocabulary.** "Breakdown" and "sub-breakdown" are the domain terms, used identically in the code, the UI and the CSV headers. The word **"component" now means React component and nothing else** — it previously meant both, which made `Component` ambiguous in every file that imported React.
+**A note on the vocabulary.** "Breakdown" and "sub-breakdown" are the domain terms, used identically in the code, the UI and the saved files. The word **"component" now means React component and nothing else** — it previously meant both, which made `Component` ambiguous in every file that imported React.
 
 The exact shape persisted to `localStorage`:
 
@@ -152,8 +151,7 @@ Ranking is by percentage, not by raw marks lost: a 4/10 is dropped ahead of a 15
 **Backward compatibility.** When every row is out of 100, total-marks arithmetic reduces *exactly* to the old average — including under both policies. That's why migrated v1 data (§5) keeps the grade it always had, and there are tests asserting each of the three paths reduces correctly.
 
 **Course grade** (`calculateCourseGrade`) sums each breakdown's `calculateWeightedValue` across breakdowns that have *both* a grade and a weight; returns `null` if none qualify. It does **not** check that weights sum to 100 — that gate is `areWeightsValid(breakdowns)`, called by both consumers:
-- [CourseSection.tsx](src/components/CourseSection.tsx) shows a warning alert and renders `—` when it fails.
-- [pdfExport.ts](src/lib/pdfExport.ts) prints a warning line instead of a grade.
+[CourseSection.tsx](src/components/CourseSection.tsx) shows a warning alert and renders `—` when it fails.
 
 `areWeightsValid` compares against 100 with a `1e-9` tolerance rather than `===`. Summing decimal weights drifts: `0.01 + 64.04 + 35.95` evaluates to `100.00000000000001`, and exact equality used to hide the final grade behind a warning that read "weights total 100.0%". The tolerance absorbs float error only — `33.33 × 3 = 99.99` is a real shortfall and still warns.
 
@@ -219,7 +217,7 @@ State flows down as props; mutations flow up as `on*` callbacks, with each level
 
 **Numeric inputs go through [NumberInput](src/components/NumberInput.tsx)**, never raw `<Input type="number">`. Browsers step a focused number input on wheel events, so scrolling the page over a field would silently rewrite a mark; `NumberInput` blurs on wheel instead, and `index.css` hides the spinner arrows. Use it for every new numeric field.
 
-CSV file handling lives in [useCsvImport](src/hooks/useCsvImport.ts) — it owns the hidden `<input type="file">`, the read, the parse and the toasts, and is a hook rather than a button so the header and the empty state can both open the same picker.
+Progress-file handling lives in [useProgressFile](src/hooks/useProgressFile.ts) — it owns the hidden `<input type="file">`, the read, the parse and the toasts, and is a hook rather than a button so the header and the empty state can both open the same picker.
 
 **Layout:** courses render in a horizontal scroll-snap carousel (`overflow-x-auto snap-x snap-mandatory`), each capped at `max-w-2xl`. This is a deliberate choice from commit `d3347fb`, not a wrapping grid.
 
@@ -232,42 +230,43 @@ Because it works on a bare policy, the same component serves two places:
 
 ⚠️ The modal's draft is seeded at mount, in an inner component `key`ed on `open`. Two subtler approaches both broke: seeding from an effect that depends on `policy` reset an in-progress draft whenever anything else in the breakdown changed (`policy` is a new object every store update), and relying on Radix to unmount the content on close defers to an exit animation whose `animationend` may never fire. See the comment in [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) before changing it.
 
-## 8. Import / export
+## 8. Save / reload progress
 
-Three modules, one per responsibility: [csvExport.ts](src/lib/csvExport.ts), [csvImport.ts](src/lib/csvImport.ts), [pdfExport.ts](src/lib/pdfExport.ts). All operations are synchronous, in-browser, and never touch the network.
-
-Each export separates **building** the artifact from **handing it to the browser**. `buildCoursesCsv(courses)` and `buildReportRows(course)` are pure and directly asserted in tests; the only DOM contact is `downloadBlob` in [download.ts](src/lib/download.ts). Before this split the CSV format could not be tested at all, because producing it required `URL.createObjectURL`.
-
-**CSV format** — 9 columns, one row per sub-breakdown:
+Progress lives in `localStorage` automatically (§5). **Save Progress** additionally writes **one JSON file per course** into `progresses/` in the project root, and **Reload Progress** reads them all back. Both happen immediately, with no dialog:
 
 ```
-Course Name, Breakdown Name, Breakdown Weight (%), Drop Lowest, Downweight Count, Downweight %,
-Sub-breakdown Name, Marks Achieved, Full Marks
+grade-calculator/
+└── progresses/
+    ├── CPSC_330.json
+    └── Databases_in_Data_Science.json
 ```
 
-Parent columns are written **only on the first row of each group** and blank thereafter — a sparse, human-readable shape, applied via the shared `firstRowOnly` helper in [exportFormat.ts](src/lib/exportFormat.ts) so CSV and PDF can't diverge. `parseCSV` mirrors it by carrying the last-seen course and breakdown forward across blank cells.
+Filenames come from the course name: spaces → underscores, characters filesystems reject stripped, leading dots removed, collisions suffixed `_2` — deduped **case-insensitively**, since macOS and Windows would otherwise let two courses overwrite each other.
 
-**The parser is hand-rolled** (no papaparse) and runs in three steps — `parseLine` tokenises, `resolveColumns` maps headers, then the tree is assembled. It:
-- handles quoted fields and `""` escapes,
-- resolves each column against its current **and** legacy header name via `COLUMN_ALIASES`, so CSVs exported before the breakdown rename still import — a missing `Full Marks` column defaults to 100, which is what those percentages already meant,
-- pads short rows and backfills an auto-named sub-breakdown where a breakdown would otherwise have none. Marks are imported verbatim — never clamped.
-- distinguishes a *missing* `Full Marks` column (an older export, so marks are percentages out of 100) from a *blank* cell (genuinely unset).
+Each file holds the same `{ version, courses }` envelope `localStorage` uses, containing one course. So loading reuses `migrate` and a file written by an older build still opens; the persisted shape is defined once, not twice. Reloading **replaces** the course list in filename order — it is not a merge.
 
-An export → import round trip is covered by tests, including names containing commas and quotes.
+**Saving is an overwrite, not an append.** After a save, `progresses/` matches the UI exactly: files whose course no longer exists are deleted, because reload reads *every* JSON in the folder and leftovers would resurrect deleted courses. Deleting all your courses and saving therefore leaves the folder **empty** — there is deliberately no "nothing to save" guard, since refusing would leave the previous save behind for the next reload to pick up. Only `.json` files directly in `progresses/` are touched; anything else is left alone, and the toast reports what was removed.
 
-⚠️ **Known limitation:** the input is split on `\n` *before* quote-aware parsing, so a quoted field containing a newline breaks into multiple rows. Fine for self-exported files; a real risk for spreadsheets pasted from elsewhere. Fixing this means restructuring the tokenizer to consume the whole string — or adopting a CSV library.
+`progresses/` is gitignored — it's personal data, not source.
 
-Import is destructive: it replaces all existing courses with no confirmation prompt.
+### Why this needs a server
 
-**PDF export** builds a per-course heading plus an autoTable, using the same first-row-only convention. The plugin ships `jsPDFDocument = any`, so its cursor position is described by a local `AutoTableDocument` interface and read with optional chaining — a narrow, documented cast instead of `as any`. A test asserts the plugin really does populate `lastAutoTable.finalY`, since a silent fallback there would make multi-course reports overlap.
+A browser page **cannot** create a folder or list one. That's a sandbox rule, not a missing library, and the only in-page escape hatch (the File System Access API) forces a folder-picker dialog on every use and is Chromium-only.
+
+So the file I/O happens in Node instead. [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts) adds `GET`/`PUT /api/progress` to the dev *and* preview servers; the page just asks. That's what makes it automatic.
+
+The trade-off: **it only works while a Vite server is running.** A `npm run build` copy served by anything else has no Node process, so the client falls back to one combined download and a manual multi-file picker. `ProgressApiUnavailableError` drives that, and it triggers on a non-JSON response too — a static host answers unknown routes with the SPA's HTML, so a 200 alone isn't proof the API is there.
+
+⚠️ **Filenames arrive from the browser, so the server treats them as untrusted.** `isSafeProgressFileName` rejects separators, dot-segments, null bytes and non-`.json` names, and `resolveProgressPath` additionally verifies the resolved path's directory is the progress folder. Both are tested, including against the names `courseFileName` actually generates — a mismatch there would silently drop a course from the save.
+
+⚠️ **The dev server binds to `host: "::"`** (all interfaces), so this write endpoint is reachable from your local network, not just your machine. Set `host: "localhost"` in `vite.config.ts` if that matters to you.
 
 ## 9. Known issues & technical debt
 
 Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
-2. **CSV newline handling** (§8) — a quoted field containing a line break tears across rows.
-3. **No component test coverage.** `src/lib/*` and the store hook are well covered (235 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
+3. **No component test coverage.** `src/lib/*` and the store hook are well covered (240 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
 6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. 30 shadcn primitives are also unused, though those tree-shake.
@@ -282,12 +281,12 @@ Ordered roughly by how likely each is to bite you.
 - **New grading policy** (e.g. "best N of M"): add fields to `Breakdown` in `types/grades.ts` → add the rule to `gradePolicies.ts` (an `applyBestOf` over `MarkPair[]`, a case in `getActiveAdvancedOption`, and one in `advancedOptionUpdate`) → add a `case` in `calculateBreakdownGrade`'s switch → add a switch to `AdvancedOptions` → add the columns to `CSV_HEADERS` and `COLUMN_ALIASES`. The switch is exhaustive over `AdvancedOption`, so TypeScript will point at every site you still need to touch.
 - **New breakdown type:** add an entry to `BREAKDOWN_PRESETS` in `breakdownPresets.ts` with its `singular`, **in alphabetical position** — a test enforces the ordering. The dialog and the CSV importer both read from there, so that's the only edit.
 - **Changing the persisted shape:** bump `SCHEMA_VERSION`, extend `migrate`/`normalizeCourses` in `courseStorage.ts`, and add a test asserting old data still calculates the same. A field added without backfilling deserialises as `undefined`, which any `!== null` check reads as *set*. Saved data is the one thing here that can't be regenerated.
-- **Adding a CSV column:** add it to `CSV_HEADERS` and `COLUMN_ALIASES`, then check what the positional fallback hits in files that predate it — `toFloat` rejecting NaN is what stops a text column becoming a number.
 - **New route:** add `<Route>` in `App.tsx` above the `*` catch-all, create the page in `src/pages/`.
 - **Deeper store access:** convert `useGradeStore` into a Context provider rather than calling the hook twice (§5).
 - **New UI primitive:** `npx shadcn@latest add <name>` — never hand-write into `src/components/ui/`.
 - **New semantic color:** HSL var in both `:root` and `.dark` in `index.css`, then map it in `tailwind.config.ts`.
 - **New export format:** write a pure `build…` function, then a wrapper that calls `downloadBlob` with `timestampedFilename`. Keep the wrapper too small to need a test.
+- **Replacing the favicon:** drop the file in `public/`, point the `<link rel="icon">` at it, and bump the `?v=` query — otherwise browsers keep serving the cached one.
 - **Backend/sync, if ever:** implement the `CourseStorage` interface and pass it to `useGradeStore` — the store already depends on the interface rather than on `localStorage`. react-query is mounted and idle.
 
 ## 11. Symptom → cause map
@@ -300,7 +299,6 @@ Ordered roughly by how likely each is to bite you.
 | A grade reads over 100% | By design — bonus marks are allowed and nothing is clamped | `getEnteredMarks` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
 | Bonus marks stopped exceeding 100% | A full credit threshold is set, which caps the breakdown (§6) | `applyFullCreditGrade` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
 | Setting a marks policy cleared the full credit threshold | `advancedOptionUpdate` must return only `MarksPolicyFields` and be spread, not assigned | [gradePolicies.ts](src/lib/gradePolicies.ts) |
-| An imported CSV has a nonsense threshold | A pre-column file fell through to the positional fallback; `toFloat` must reject NaN | [csvImport.ts](src/lib/csvImport.ts) |
 | A row with marks entered doesn't count | Its full marks are still blank, or are 0 | `getEnteredMarks` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
 | Displayed figures don't add to 100% | Expected — each is rounded to 2 dp independently (§6) | `DISPLAY_DECIMALS` in [gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Scrolling the page changed a mark | A raw `<Input type="number">` slipped in instead of `NumberInput` | grep for `type="number"` outside [NumberInput.tsx](src/components/NumberInput.tsx) |
@@ -308,16 +306,19 @@ Ordered roughly by how likely each is to bite you.
 | Marks typed but breakdown still `—` | Non-numeric input never reached the store — `handleAchievedChange` drops `NaN` | [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) |
 | Wrong row got dropped by "drop lowest" | Ranking is by percentage, not raw marks lost (§6) | `sortByPercentage` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
 | Old saved data vanished after an update | `migrate` didn't recognise the shape — check the console and the `version` field | [courseStorage.ts](src/lib/courseStorage.ts), `migrate` |
-| CSV import produces garbled/extra rows | Quoted field contained a newline (§8) | [csvImport.ts](src/lib/csvImport.ts), the `split('\n')` |
-| CSV import silently loses a breakdown | Its row had a blank Breakdown Name, so it merged into the previous one | `parseCSV` carry-forward logic |
-| Old CSV imports with everything out of 100 | Correct — legacy files have no `Full Marks` column, so it defaults to 100 | `hasFullMarksColumn` in [csvImport.ts](src/lib/csvImport.ts) |
+| Reload Progress wiped everything | It replaces, never merges (§8). A file that fails validation leaves data intact | `looksLikeProgress` in [progressFile.ts](src/lib/progressFile.ts) |
+| Save downloads a file instead of writing progresses/ | No Vite server behind the page — a static build has no Node process (§8) | `ProgressApiUnavailableError` |
+| A course vanishes from the save | Its generated filename failed the server's safety check; the two must agree | `courseFileName` vs `isSafeProgressFileName` |
+| A deleted course came back after reload | Stale-file pruning didn't run, or the folder holds files from an older save | `writeProgressFiles` in [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts) |
+| Saving with no courses left the old files | Save must always run, even for an empty list — a "nothing to save" guard reintroduces this | `saveProgress` in [useProgressFile.ts](src/hooks/useProgressFile.ts) |
+| Two courses with the same name overwrite each other | Filename dedupe must be case-insensitive | `courseFileName` in [progressFile.ts](src/lib/progressFile.ts) |
+| The tab icon is stale after replacing it | Bump the `?v=` on the icon link; browsers cache favicons hard | [index.html](index.html) |
 | A long dropdown runs off screen | `SelectContent` must stay capped to `--radix-select-content-available-height` | local fix in [select.tsx](src/components/ui/select.tsx) |
 | Breakdown added to the wrong course | Each `CourseSection` owns its own `AddBreakdownDialog`; suspect one hoisted to a shared parent | [CourseSection.tsx](src/components/CourseSection.tsx) |
 | New sub-breakdown name duplicates an existing one | `nextSubBreakdownName` continues past the highest number used; a renamed row won't match the pattern | [breakdownPresets.ts](src/lib/breakdownPresets.ts) |
 | Two parts of the UI disagree about state | A second `useGradeStore()` call created a rival store (§5) | grep `useGradeStore` — must appear once |
 | Delete does nothing on a sub-breakdown | It's the last one; deletion is blocked by design | [useGradeStore.ts](src/hooks/useGradeStore.ts), `deleteSubBreakdown` |
 | Dark styles never apply | No `ThemeProvider` mounts; `.dark` is never added (§9) | `App.tsx` |
-| Multi-course PDF rows overlap | `lastAutoTable.finalY` came back undefined and spacing fell back | [pdfExport.ts](src/lib/pdfExport.ts), `renderCourse` |
 
 ## 12. Glossary
 
