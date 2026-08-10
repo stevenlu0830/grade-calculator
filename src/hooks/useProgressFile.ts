@@ -1,9 +1,10 @@
 import { useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import { Course } from '@/types/grades';
+import { Course, GradeData } from '@/types/grades';
 import {
   PROGRESS_DIRECTORY_NAME,
   ProgressApiUnavailableError,
+  isManifestFile,
   loadProgressFromServer,
   parseProgressFiles,
   saveProgressAsSingleFile,
@@ -18,8 +19,15 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
  * Both go straight to `progresses/` with no prompt, via the dev server. If no
  * server is answering — a static build — they degrade to a download and a
  * manual file picker rather than failing.
+ *
+ * Courses and semesters arrive separately rather than as one object, so the
+ * callbacks aren't rebuilt on every render by a fresh wrapper.
  */
-export function useProgressFile(courses: Course[], onLoad: (courses: Course[]) => void) {
+export function useProgressFile(
+  courses: Course[],
+  semesters: string[],
+  onLoad: (data: GradeData) => void
+) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const saveProgress = useCallback(async () => {
@@ -27,9 +35,11 @@ export function useProgressFile(courses: Course[], onLoad: (courses: Course[]) =
     // UI", so deleting every course and saving must leave the folder empty
     // rather than quietly keeping the previous files.
     try {
-      const { directory, written, removed } = await saveProgressToServer(courses);
+      const { directory, written, removed } = await saveProgressToServer({ courses, semesters });
+      // The manifest is always written; it isn't a course, so it isn't news.
+      const savedCourses = written.filter(name => !isManifestFile(name));
 
-      if (written.length === 0) {
+      if (savedCourses.length === 0) {
         toast.success(
           removed.length ? `Cleared ${directory}/` : `Nothing to save — ${directory}/ is empty`,
           { description: removed.length ? `Removed ${plural(removed.length, 'file')}.` : undefined }
@@ -37,14 +47,14 @@ export function useProgressFile(courses: Course[], onLoad: (courses: Course[]) =
         return;
       }
 
-      toast.success(`Saved ${plural(written.length, 'course')} to ${directory}/`, {
+      toast.success(`Saved ${plural(savedCourses.length, 'course')} to ${directory}/`, {
         description: removed.length
-          ? `${written.join(', ')} · removed ${plural(removed.length, 'file')} for deleted courses.`
-          : written.join(', '),
+          ? `${savedCourses.join(', ')} · removed ${plural(removed.length, 'file')} for deleted courses.`
+          : savedCourses.join(', '),
       });
     } catch (error) {
       if (error instanceof ProgressApiUnavailableError) {
-        saveProgressAsSingleFile(courses);
+        saveProgressAsSingleFile({ courses, semesters });
         toast.success('Progress saved', {
           description: 'No local server, so everything went to one downloaded file.',
         });
@@ -53,12 +63,11 @@ export function useProgressFile(courses: Course[], onLoad: (courses: Course[]) =
       console.error('Save progress failed:', error);
       toast.error(`Could not write to ${PROGRESS_DIRECTORY_NAME}/.`);
     }
-  }, [courses]);
+  }, [courses, semesters]);
 
   const reloadProgress = useCallback(async () => {
     try {
-      const { courses: loaded, skipped } = await loadProgressFromServer();
-      reportLoad(loaded, skipped, onLoad);
+      reportLoad(await loadProgressFromServer(), onLoad);
     } catch (error) {
       if (error instanceof ProgressApiUnavailableError) {
         inputRef.current?.click(); // Fall back to picking the files by hand.
@@ -79,8 +88,7 @@ export function useProgressFile(courses: Course[], onLoad: (courses: Course[]) =
       const files = await Promise.all(
         selected.map(async file => ({ name: file.name, contents: await file.text() }))
       );
-      const { courses: loaded, skipped } = parseProgressFiles(files);
-      reportLoad(loaded, skipped, onLoad);
+      reportLoad(parseProgressFiles(files), onLoad);
     },
     [onLoad]
   );
@@ -88,8 +96,17 @@ export function useProgressFile(courses: Course[], onLoad: (courses: Course[]) =
   return { inputRef, saveProgress, reloadProgress, handleFileChange };
 }
 
-function reportLoad(loaded: Course[], skipped: string[], onLoad: (courses: Course[]) => void) {
-  if (loaded.length === 0) {
+interface LoadReport extends GradeData {
+  skipped: string[];
+}
+
+function reportLoad(
+  { courses, semesters, skipped }: LoadReport,
+  onLoad: (data: GradeData) => void
+) {
+  // Semesters alone are worth loading: a saved folder can legitimately hold
+  // nothing but a manifest, if every semester in it is still empty.
+  if (courses.length === 0 && semesters.length === 0) {
     toast.error(
       skipped.length
         ? 'None of those files were saved progress.'
@@ -98,8 +115,8 @@ function reportLoad(loaded: Course[], skipped: string[], onLoad: (courses: Cours
     return;
   }
 
-  onLoad(loaded);
-  toast.success(`Reloaded ${plural(loaded.length, 'course')}`, {
+  onLoad({ courses, semesters });
+  toast.success(`Reloaded ${plural(courses.length, 'course')}`, {
     description: skipped.length ? `Skipped ${skipped.join(', ')}` : undefined,
   });
 }

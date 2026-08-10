@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Course, Breakdown, SubBreakdown } from '@/types/grades';
+import { Course, Breakdown, GradeData, SubBreakdown } from '@/types/grades';
 import { CourseStorage, localCourseStorage } from '@/lib/courseStorage';
 import { nextSubBreakdownName } from '@/lib/breakdownPresets';
 import { GradingPolicy } from '@/lib/gradePolicies';
+import { UNASSIGNED_SEMESTER, persistedSemesters } from '@/lib/semesters';
 import { createId } from '@/lib/id';
 
 /**
@@ -37,6 +38,7 @@ const createBreakdown = (courseId: string, input: NewBreakdown): Breakdown => {
     downweightLowestCount: input.downweightLowestCount,
     downweightPercent: input.downweightPercent,
     fullCreditGrade: input.fullCreditGrade,
+    isBonus: input.isBonus,
     subBreakdownLabel: input.subBreakdownLabel,
     // Every breakdown starts with one row so there's somewhere to type a mark.
     subBreakdowns: [createSubBreakdown(breakdownId, `${input.subBreakdownLabel} 1`)],
@@ -58,6 +60,15 @@ const mapBreakdown = (
 });
 
 /**
+ * Everything a semester a course names is also on the semester list, so nothing
+ * disappears when its last course is deleted.
+ */
+const normalize = (data: GradeData): GradeData => ({
+  courses: data.courses,
+  semesters: persistedSemesters(data.courses, data.semesters),
+});
+
+/**
  * The single source of truth for course data.
  *
  * Call this once, at the top of the tree, and pass its actions down: a second
@@ -65,24 +76,56 @@ const mapBreakdown = (
  * storage key.
  */
 export function useGradeStore(storage: CourseStorage = localCourseStorage) {
-  const [courses, setCourses] = useState<Course[]>(() => storage.load());
+  const [data, setData] = useState<GradeData>(() => normalize(storage.load()));
+  const { courses, semesters } = data;
 
   // Autosave: no component ever writes to storage itself.
   useEffect(() => {
-    storage.save(courses);
-  }, [courses, storage]);
+    storage.save(data);
+  }, [data, storage]);
+
+  /** Course actions all edit the same slice; semesters ride along untouched. */
+  const setCourses = useCallback((update: (courses: Course[]) => Course[]) => {
+    setData(prev => ({ ...prev, courses: update(prev.courses) }));
+  }, []);
+
+  const addSemester = useCallback((semester: string) => {
+    setData(prev =>
+      prev.semesters.includes(semester)
+        ? prev
+        : { ...prev, semesters: [...prev.semesters, semester] }
+    );
+  }, []);
+
+  /** Takes the semester's courses with it — the dialog warns before this runs. */
+  const deleteSemester = useCallback((semester: string) => {
+    setData(prev => ({
+      semesters: prev.semesters.filter(s => s !== semester),
+      courses: prev.courses.filter(
+        course => (course.semester ?? UNASSIGNED_SEMESTER) !== semester
+      ),
+    }));
+  }, []);
 
   const addCourse = useCallback((name: string, semester: string) => {
-    setCourses(prev => [...prev, { id: createId(), name, semester, breakdowns: [] }]);
+    setData(prev => ({
+      // A course can be added to a semester loaded from a file that never named
+      // it explicitly; recording it here keeps the panel honest.
+      semesters:
+        semester === UNASSIGNED_SEMESTER || prev.semesters.includes(semester)
+          ? prev.semesters
+          : [...prev.semesters, semester],
+      courses: [...prev.courses, { id: createId(), name, semester, breakdowns: [] }],
+    }));
   }, []);
 
   const deleteCourse = useCallback((courseId: string) => {
     setCourses(prev => prev.filter(c => c.id !== courseId));
-  }, []);
+  }, [setCourses]);
 
   const updateCourseName = useCallback((courseId: string, name: string) => {
     setCourses(prev => mapCourse(prev, courseId, course => ({ ...course, name })));
-  }, []);
+  }, [setCourses]);
 
   const addBreakdown = useCallback((courseId: string, input: NewBreakdown) => {
     setCourses(prev =>
@@ -91,7 +134,7 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
         breakdowns: [...course.breakdowns, createBreakdown(courseId, input)],
       }))
     );
-  }, []);
+  }, [setCourses]);
 
   const deleteBreakdown = useCallback((courseId: string, breakdownId: string) => {
     setCourses(prev =>
@@ -100,7 +143,7 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
         breakdowns: course.breakdowns.filter(b => b.id !== breakdownId),
       }))
     );
-  }, []);
+  }, [setCourses]);
 
   const updateBreakdown = useCallback(
     (courseId: string, breakdownId: string, updates: Partial<Breakdown>) => {
@@ -110,7 +153,7 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
         )
       );
     },
-    []
+    [setCourses]
   );
 
   const addSubBreakdown = useCallback((courseId: string, breakdownId: string) => {
@@ -131,7 +174,7 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
         }))
       )
     );
-  }, []);
+  }, [setCourses]);
 
   const deleteSubBreakdown = useCallback(
     (courseId: string, breakdownId: string, subBreakdownId: string) => {
@@ -149,7 +192,7 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
         )
       );
     },
-    []
+    [setCourses]
   );
 
   const updateSubBreakdown = useCallback(
@@ -172,15 +215,19 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
         )
       );
     },
-    []
+    [setCourses]
   );
 
-  const importCourses = useCallback((newCourses: Course[]) => {
-    setCourses(newCourses);
+  /** Replaces everything — what Reload Progress does. */
+  const importData = useCallback((next: GradeData) => {
+    setData(normalize(next));
   }, []);
 
   return {
     courses,
+    semesters,
+    addSemester,
+    deleteSemester,
     addCourse,
     deleteCourse,
     updateCourseName,
@@ -190,7 +237,7 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
     addSubBreakdown,
     deleteSubBreakdown,
     updateSubBreakdown,
-    importCourses,
+    importData,
   };
 }
 

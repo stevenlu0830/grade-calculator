@@ -23,6 +23,7 @@ export const BREAKDOWN_PRESETS: readonly BreakdownPreset[] = [
   { label: 'In-class Exercises', singular: 'In-class Exercise' },
   { label: 'Labs', singular: 'Lab' },
   { label: 'Midterms', singular: 'Midterm' },
+  { label: 'Participation', singular: 'Participation' },
   { label: 'Project Phases', singular: 'Project Phase' },
   { label: 'Quizzes', singular: 'Quiz' },
   { label: 'Tests', singular: 'Test' },

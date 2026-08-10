@@ -6,6 +6,7 @@ import {
   calculateCourseGrade,
   calculateWeightedValue,
   clampPercentage,
+  getBonusWeight,
   getEnteredMarks,
   getTotalWeight,
 } from '@/lib/gradeCalculations';
@@ -31,6 +32,7 @@ const makeBreakdown = (entries: Entry[], overrides: Partial<Breakdown> = {}): Br
     downweightLowestCount: null,
     downweightPercent: null,
     fullCreditGrade: null,
+    isBonus: false,
     subBreakdownLabel: 'Item',
     subBreakdowns,
     ...overrides,
@@ -441,6 +443,44 @@ describe('areWeightsValid', () => {
 
   it('rejects a course with no breakdowns', () => {
     expect(areWeightsValid([])).toBe(false);
+  });
+});
+
+describe('bonus breakdowns', () => {
+  const bonus = (weight: number, entries: Entry[] = [[10, 10]]) =>
+    makeBreakdown(entries, { weight, isBonus: true });
+
+  it('is left out of the weight total, so the rest can still make 100', () => {
+    const breakdowns = [makeBreakdown([], { weight: 100 }), bonus(5)];
+    expect(getTotalWeight(breakdowns)).toBe(100);
+    expect(areWeightsValid(breakdowns)).toBe(true);
+  });
+
+  it('is reported separately as the extra credit available', () => {
+    expect(getBonusWeight([makeBreakdown([], { weight: 100 }), bonus(5), bonus(3)])).toBe(8);
+    expect(getBonusWeight([makeBreakdown([], { weight: 100 })])).toBe(0);
+  });
+
+  it('still adds its points to the course grade', () => {
+    // 80% of a 100% breakdown, plus full marks on a 5% bonus.
+    const breakdowns = [makeBreakdown([[80, 100]], { weight: 100 }), bonus(5)];
+    expect(calculateCourseGrade(breakdowns)).toBeCloseTo(85, 10);
+  });
+
+  it('can push a course past 100', () => {
+    const breakdowns = [makeBreakdown([[100, 100]], { weight: 100 }), bonus(5)];
+    expect(calculateCourseGrade(breakdowns)).toBeCloseTo(105, 10);
+  });
+
+  it('contributes only what was earned', () => {
+    const breakdowns = [makeBreakdown([[80, 100]], { weight: 100 }), bonus(10, [[1, 4]])];
+    // 80 + 25% of 10.
+    expect(calculateCourseGrade(breakdowns)).toBeCloseTo(82.5, 10);
+  });
+
+  it('cannot make up for weights that fall short on their own', () => {
+    // 90 + a 10% bonus is not a course that adds up; the bonus is extra, not fill.
+    expect(areWeightsValid([makeBreakdown([], { weight: 90 }), bonus(10)])).toBe(false);
   });
 });
 

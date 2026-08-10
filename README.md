@@ -26,7 +26,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Styling | Tailwind 3 + CSS variables | shadcn/ui `default` style, slate base |
 | Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | 265 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 335 tests in `src/test/`; React components untested |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template. `jspdf`/`jspdf-autotable` are now unused too, since PDF export was removed — still in `package.json`, no longer in the bundle.
 
@@ -52,7 +52,7 @@ This project was scaffolded with Lovable ([project dashboard](https://lovable.de
 ```
 Semester                 a label like "2026 Summer Term 2"
  └── Course              belongs to exactly one semester
-      └── Breakdown      weight %, optional grading policy (drop / downweight / full credit)
+      └── Breakdown      weight %, optional grading policy (drop / downweight / full credit / bonus)
            └── SubBreakdown   name + marks achieved out of full marks
 ```
 
@@ -64,7 +64,8 @@ The exact shape persisted to `localStorage`:
 
 ```json
 {
-  "version": 4,
+  "version": 5,
+  "semesters": ["2026 Summer Term 2"],
   "courses": [{
     "id": "8f14e45f-…",
     "name": "CPSC 121",
@@ -78,6 +79,7 @@ The exact shape persisted to `localStorage`:
       "downweightLowestCount": null,
       "downweightPercent": null,
       "fullCreditGrade": null,
+      "isBonus": false,
       "subBreakdownLabel": "Assignment",
       "subBreakdowns": [
         { "id": "…", "breakdownId": "b1c2d3e4-…", "name": "Assignment 1", "achievedMarks": 18, "fullMarks": 20 },
@@ -90,12 +92,15 @@ The exact shape persisted to `localStorage`:
 
 Things to notice:
 
+- **`semesters`** is the list of semesters that exist, stored alongside the courses so one with no courses in it survives a reload. See §4a.
 - **`semester`** groups courses. A course belongs to exactly one; `''` means unassigned. See §4a.
+- **The order of `courses` is meaningful.** It's the order they're shown in, and it's preserved across a save and reload. See §8.
 - **`achievedMarks` is marks, not a percentage** — 18 out of 20, not 90.
 - **Both mark fields start blank.** `fullMarks` is `number | null`; a row with no full marks yet can't produce a score, so it's excluded from the totals until filled in. (Legacy data is the exception — see §5.)
 - **`achievedMarks: null`** on Assignment 2 means entered-but-ungraded. It's excluded from the totals rather than counted as zero, and its 25 marks don't drag the denominator either.
 - **Marks are never corrected.** A score above full marks is a valid bonus and pushes the breakdown past 100%; nothing is clamped on entry, on import, or when full marks change.
 - **`fullCreditGrade`** is the percentage that earns 100% for the breakdown, or `null`. Unlike drop/downweight it is *not* part of the mutually-exclusive pair — see §6.
+- **`isBonus`** makes the breakdown extra credit: its weight is added on top of the course rather than counted towards the 100% — see §6.
 - **`subBreakdownLabel`** is the singular noun used to auto-name new rows ("Assignment" → "Assignment 3"). Stored rather than derived, because de-pluralising English by rule mangles Quizzes and WebWorks.
 
 **Nullability is semantic.** `achievedMarks`, `fullMarks` and `weight` are all `number | null`, where `null` = "the user hasn't entered this." A `0` is a real, meaningful zero. This distinction drives the whole UI: `null` renders as `—`, propagates through calculations, and excludes a row from totals. Preserve it — reads use `??`, never `||`.
@@ -104,24 +109,27 @@ Things to notice:
 
 Courses are grouped by semester, chosen from a year and one of UBC's four terms, and stored on the course as a label: `"semester": "2026 Summer Term 2"`.
 
-**There is no separate semester record.** A semester exists because courses name it, which keeps the saved file exactly one key per course. [semesters.ts](src/lib/semesters.ts) derives the panel's list from the courses, and `TERMS` is ordered *chronologically within an academic year* — Winter Term 1 starts in September, so it precedes the Summer terms.
+**Semesters are stored twice over, on purpose.** Each course names its own, *and* the envelope carries an explicit `semesters` list. The list is what anchors a semester with no courses in it; without it, an empty semester would have nothing to be reconstructed from. [semesters.ts](src/lib/semesters.ts) reconciles the two, and `TERMS` is ordered *chronologically within an academic year* — Winter Term 1 starts in September, so it precedes the Summer terms.
 
-Two consequences:
+- `visibleSemesters(courses, semesters)` — what the panel shows: the union, so a semester survives whether it's on the list, named by a course, or both.
+- `persistedSemesters(courses, semesters)` — what gets stored: the same union, minus the unassigned bucket. The store applies it on load and on import, so data saved before the list existed (v4 and earlier) heals into it rather than losing a semester the first time its last course is deleted.
 
-- **A semester with no courses doesn't survive a reload.** Nothing anchors it. Newly added ones live in `pendingSemesters` state in `Index.tsx` so they're selectable immediately, but that's session-only.
-- **Courses saved before semesters existed** normalize to `''` and appear under **Unassigned**, sorted last, rather than vanishing from the panel.
+Consequences:
 
-**Adding a course requires a selected semester** — the course has to belong to one. `New Course` reports "Add a semester first" rather than opening the dialog when none is selected.
+- **Courses saved before semesters existed** normalize to `''` and appear under **Unassigned**, sorted last, rather than vanishing from the panel. The unassigned bucket is never persisted to the list — it isn't a semester anyone created, so it disappears once nothing is in it.
+- **Deleting a semester deletes its courses.** `deleteSemester` drops the label *and* every course under it, which is why `DeleteSemesterDialog` names the count and says it can't be undone before anything happens.
+
+**Adding a course requires a selected semester** — the course has to belong to one. `New Course` reports "Add a semester first" rather than opening the dialog when none is selected. `addCourse` also records the semester on the list, so a semester loaded from a file that never named it explicitly still becomes anchored.
 
 ## 5. State & persistence
 
 [src/hooks/useGradeStore.ts](src/hooks/useGradeStore.ts) is the only stateful module.
 
-- `useState<Course[]>` with a lazy initializer that reads through a `CourseStorage`.
-- A `useEffect` on `[courses]` writes the whole array back on every change — autosave is implicit and total; no component ever calls `localStorage` itself.
+- `useState<GradeData>` — `{ courses, semesters }` — with a lazy initializer that reads through a `CourseStorage`.
+- A `useEffect` on `[data]` writes the whole object back on every change — autosave is implicit and total; no component ever calls `localStorage` itself.
 - Persistence is injected, not imported: the hook takes a `CourseStorage` and defaults to `localCourseStorage`. Swapping in a server-backed or in-memory implementation touches no state logic. See [src/lib/courseStorage.ts](src/lib/courseStorage.ts).
-- Storage key: `ubc-grade-calculator-data`, written as `{ version, courses }` with `SCHEMA_VERSION = 4`. Read and write both degrade to console errors (private-mode and quota failures).
-- **Migration.** `migrate(raw)` in `courseStorage.ts` accepts either the current envelope or bare version-1 data (a `Course[]` using `components`/`subComponents`, where `grade` was a percentage). v1 rows are given `LEGACY_FULL_MARKS` (100), which makes them calculate to exactly the grade they did before; ids are preserved so nothing re-keys. New rows created today start blank instead. A second pass, `normalizeCourses`, backfills fields added after a save — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, since `undefined !== null` would make every later nullability check read a missing field as *set*. Covered by [courseStorage.test.ts](src/test/courseStorage.test.ts).
+- Storage key: `ubc-grade-calculator-data`, written as `{ version, courses, semesters }` with `SCHEMA_VERSION = 5`. Read and write both degrade to console errors (private-mode and quota failures).
+- **Migration.** `migrate(raw)` in `courseStorage.ts` accepts either the current envelope or bare version-1 data (a `Course[]` using `components`/`subComponents`, where `grade` was a percentage). v1 rows are given `LEGACY_FULL_MARKS` (100), which makes them calculate to exactly the grade they did before; ids are preserved so nothing re-keys. New rows created today start blank instead. A second pass, `normalizeCourses`, backfills fields added after a save — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, since `undefined !== null` would make every later nullability check read a missing field as *set*, and `isBonus` becomes `false`, since everything saved before bonus existed counted towards the 100%. `migrate` returns `{ courses, semesters }`; anything older than version 5 has no semester list, which the store then rebuilds from the courses (§4a). Covered by [courseStorage.test.ts](src/test/courseStorage.test.ts).
 - IDs come from `createId()` in [src/lib/id.ts](src/lib/id.ts) — `crypto.randomUUID()`, with a `Math.random` fallback for non-DOM environments.
 - Nested updates go through the module-local `mapCourse` / `mapBreakdown` helpers, so each action stays a few lines rather than a four-deep `.map` pyramid.
 
@@ -131,9 +139,10 @@ Two consequences:
 - A breakdown always keeps ≥1 sub-breakdown — `deleteSubBreakdown` silently no-ops on the last one.
 - **Marks are stored verbatim.** There is no clamping on write: a 22/20 stays 22/20, and lowering full marks does not rewrite the score. Silently correcting a student's entry was worse than showing them a number over 100%.
 - New breakdowns arrive with one auto-named sub-breakdown, both mark fields blank.
-- `importCourses` replaces state wholesale; there is no merge path.
+- `importData` replaces courses *and* semesters wholesale; there is no merge path.
+- Every semester a course names is also on the semester list, applied on load and on import, so nothing visible is lost when a course is deleted.
 
-**No undo, no history.** `deleteCourse` is immediate and unrecoverable. Worth knowing before adding more destructive actions.
+**No undo, no history.** `deleteCourse` is immediate and unrecoverable, and `deleteSemester` takes every course under it. That's why the semester delete is the one action here behind a confirmation dialog. Worth knowing before adding more destructive actions.
 
 ## 6. Grade calculation
 
@@ -170,6 +179,8 @@ Ranking is by percentage, not by raw marks lost: a 4/10 is dropped ahead of a 15
 **Course grade** (`calculateCourseGrade`) sums each breakdown's `calculateWeightedValue` across breakdowns that have *both* a grade and a weight; returns `null` if none qualify. It does **not** check that weights sum to 100 — that gate is `areWeightsValid(breakdowns)`, called by both consumers:
 [CourseSection.tsx](src/components/CourseSection.tsx) shows a warning alert and renders `—` when it fails.
 
+**Bonus breakdowns** (`isBonus`) are summed by `calculateCourseGrade` like any other — that is exactly what makes them bonus — but `getTotalWeight` leaves them out, so the *other* breakdowns still have to total 100 on their own. A 5% bonus on a full course can therefore push the final grade to 105. `getBonusWeight` reports the extra credit available, which `CourseSection` shows as a note so a course that adds up correctly doesn't look short. A bonus cannot fill a gap: weights of 90 plus a 10% bonus still warn.
+
 `areWeightsValid` compares against 100 with a `1e-9` tolerance rather than `===`. Summing decimal weights drifts: `0.01 + 64.04 + 35.95` evaluates to `100.00000000000001`, and exact equality used to hide the final grade behind a warning that read "weights total 100.0%". The tolerance absorbs float error only — `33.33 × 3 = 99.99` is a real shortfall and still warns.
 
 **Two threshold scales coexist, intentionally:**
@@ -177,6 +188,8 @@ Ranking is by percentage, not by raw marks lost: a 4/10 is dropped ahead of a 15
 - Letter grades (`getLetterGrade`): UBC scale — A+ ≥90, A ≥85, A- ≥80, B+ ≥76, B ≥72, B- ≥68, C+ ≥64, C ≥60, C- ≥55, D ≥50, F below.
 
 A grade of 82 therefore shows green ("good") and the letter `A-`. Don't "fix" one to match the other without asking.
+
+**The letter follows the official grade, not the exact one.** A course is recorded with its percentage rounded to a whole number, and the letter is read against *that*: `toOfficialGrade` (`Math.round`) in [gradeFormatting.ts](src/lib/gradeFormatting.ts) is applied before `getLetterGrade`, so a 79.6 is an 80 and grades as an A-, not a B+. `GradeDisplay` shows the whole chain — `79.60 → 80 : A-` — because the exact figure is what explains the official one. The colour band follows the rounded value too, so the two can't disagree. Breakdown grades are *not* rounded this way: only a course has an official grade.
 
 ### Precision and rounding
 
@@ -245,6 +258,12 @@ Because it works on a bare policy, the same component serves two places:
 - **In "Add breakdown"**, inline behind a collapsed *Advanced options* section, so a policy can be set at creation. `NewBreakdown` extends `GradingPolicy` to carry it through.
 - **In the Advanced options modal**, opened from a breakdown's *Advanced* button. Edits go into a draft and only reach the breakdown on **Apply**, so a cancelled edit never moves the grade. The card shows `describePolicy(...)` beside the button, since the options are no longer visible inline.
 
+**Every number in it is raw text while editing** — a `PolicyDraft` (`gradePolicies.ts`), not a `GradingPolicy`. A policy can't express "switched on, box currently empty": a null count *is* what "off" means, so clearing a field to retype it would either turn the option off or snap back to a default under the cursor. The draft splits the two — a boolean for the switch, a string for the box — and:
+
+- `policyDraftErrors(draft)` names any switched-on field left blank, and both dialogs refuse to commit while it returns anything, showing `describeDraftErrors(...)` instead. Blank is legal mid-edit and never on the way out; applying it would mean inventing a number for a grading rule.
+- `policyFromDraft(draft)` converts and clamps **on commit**, so typing "100" isn't rewritten to "10" the moment `1` and `0` have been typed. It routes through `advancedOptionUpdate`, keeping Drop Lowest and Downweight mutually exclusive in one place.
+- **Bonus Grade** rides in the same draft. It isn't part of the mutually-exclusive pair — it changes what the breakdown's *weight* means, not which marks count (§6).
+
 ⚠️ The modal's draft is seeded at mount, in an inner component `key`ed on `open`. Two subtler approaches both broke: seeding from an effect that depends on `policy` reset an in-progress draft whenever anything else in the breakdown changed (`policy` is a new object every store update), and relying on Radix to unmount the content on close defers to an exit animation whose `animationend` may never fire. See the comment in [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) before changing it.
 
 ## 8. Save / reload progress
@@ -254,15 +273,26 @@ Progress lives in `localStorage` automatically (§5). **Save Progress** addition
 ```
 grade-calculator/
 └── progresses/
+    ├── _manifest.json
     ├── CPSC_330.json
     └── Databases_in_Data_Science.json
 ```
 
 Filenames come from the course name: spaces → underscores, characters filesystems reject stripped, leading dots removed, collisions suffixed `_2` — deduped **case-insensitively**, since macOS and Windows would otherwise let two courses overwrite each other.
 
-Each file holds the same `{ version, courses }` envelope `localStorage` uses, containing one course. So loading reuses `migrate` and a file written by an older build still opens; the persisted shape is defined once, not twice. Reloading **replaces** the course list in filename order — it is not a merge.
+Each course file holds the same `{ version, courses }` envelope `localStorage` uses, containing one course. So loading reuses `migrate` and a file written by an older build still opens; the persisted shape is defined once, not twice. Reloading **replaces** the course list — it is not a merge.
 
-**Saving is an overwrite, not an append.** After a save, `progresses/` matches the UI exactly: files whose course no longer exists are deleted, because reload reads *every* JSON in the folder and leftovers would resurrect deleted courses. Deleting all your courses and saving therefore leaves the folder **empty** — there is deliberately no "nothing to save" guard, since refusing would leave the previous save behind for the next reload to pick up. Only `.json` files directly in `progresses/` are touched; anything else is left alone, and the toast reports what was removed.
+**`_manifest.json` holds what no per-course file can:** the semester list and the course order.
+
+```json
+{ "version": 5, "semesters": ["2026 Winter Term 1"], "courseOrder": ["8f14e45f-…", "b1c2d3e4-…"] }
+```
+
+- **Order.** Reading a folder back gives whatever order the filenames sort in — editors and directory listings sort them alphabetically, which is not the arrangement the student built. `courseOrder` restores it. It's keyed on course **id**, not filename, so renaming a course doesn't shuffle the list. Anything the manifest doesn't mention — a file added by hand, a folder saved by an older build — keeps its filename order at the end rather than being dropped.
+- **Semesters.** An empty semester has no course file to live in, so without the manifest it would vanish on reload.
+- The manifest is written **even when there are no courses**, since an empty folder still has to remember the semesters. It is reserved before filenames are handed out, so a course called "manifest" can't claim it, and it's skipped when parsing rather than reported as a bad file. A folder with no manifest still loads — alphabetically, with semesters derived from the courses.
+
+**Saving is an overwrite, not an append.** After a save, `progresses/` matches the UI exactly: files whose course no longer exists are deleted, because reload reads *every* JSON in the folder and leftovers would resurrect deleted courses. Deleting all your courses and saving therefore leaves the folder holding **only the manifest** — there is deliberately no "nothing to save" guard, since refusing would leave the previous save behind for the next reload to pick up. Only `.json` files directly in `progresses/` are touched; anything else is left alone, and the toast reports what was removed.
 
 `progresses/` is gitignored — it's personal data, not source.
 
@@ -283,21 +313,21 @@ The trade-off: **it only works while a Vite server is running.** A `npm run buil
 Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
-3. **No component test coverage.** `src/lib/*` and the store hook are well covered (265 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
+3. **No component test coverage.** `src/lib/*` and the store hook are well covered (335 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
 6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. 30 shadcn primitives are also unused, though those tree-shake.
 7. **A row worth 0 marks is silently ignored.** `fullMarks: 0` is representable; the calculator skips such rows rather than dividing by zero, but nothing tells the student why the row stopped counting. Same for a row whose full marks are still blank.
-8. **No undo and no delete confirmation** on courses or breakdowns.
+8. **No undo, and no delete confirmation on courses or breakdowns.** Only deleting a *semester* asks first, because it takes every course under it (§4a).
 9. **Prop drilling.** `CourseSectionProps` takes 9 props and forwards 6 it never uses. Deliberately left as-is: at three levels it stays readable and keeps components trivially testable. Revisit if a fourth level appears.
 
 **Resolved along the way:** float-equality on weight totals; the misleading "totals 100.0%" warning; `exportImport.ts` doing three jobs at once; untestable export code; grading rules duplicated between the calculator and the toggle UI; `generateId`/clamp/weighted-value duplication; `(doc as any)`; the dead `App.css` / `NavLink.tsx` / `ui/use-toast.ts`; and the missing schema version, now handled by the versioned envelope and `migrate` (§5).
 
 ## 10. Extension guide
 
-- **New grading policy** (e.g. "best N of M"): add fields to `Breakdown` in `types/grades.ts` → add the rule to `gradePolicies.ts` (an `applyBestOf` over `MarkPair[]`, a case in `getActiveAdvancedOption`, and one in `advancedOptionUpdate`) → add a `case` in `calculateBreakdownGrade`'s switch → add a switch to `AdvancedOptions` → add the columns to `CSV_HEADERS` and `COLUMN_ALIASES`. The switch is exhaustive over `AdvancedOption`, so TypeScript will point at every site you still need to touch.
+- **New grading policy** (e.g. "best N of M"): add fields to `Breakdown` in `types/grades.ts` → add the rule to `gradePolicies.ts` (an `applyBestOf` over `MarkPair[]`, a case in `getActiveAdvancedOption`, and one in `advancedOptionUpdate`) → add a `case` in `calculateBreakdownGrade`'s switch → add the fields to `PolicyDraft`, `toPolicyDraft`, `policyDraftErrors` and `policyFromDraft` → add a switch to `AdvancedOptions`. The switch is exhaustive over `AdvancedOption`, so TypeScript will point at every site you still need to touch.
 - **New breakdown type:** add an entry to `BREAKDOWN_PRESETS` in `breakdownPresets.ts` with its `singular`, **in alphabetical position** — a test enforces the ordering. The dialog and the CSV importer both read from there, so that's the only edit.
-- **New term or semester rule:** `TERMS` and the helpers in `semesters.ts`; the panel and dialog both read from there.
+- **New term or semester rule:** `TERMS` and the helpers in `semesters.ts`; the panel and dialog both read from there. Anything that changes which semesters exist also has to keep `persistedSemesters` true, or an empty one won't survive a reload.
 - **Changing the persisted shape:** bump `SCHEMA_VERSION`, extend `migrate`/`normalizeCourses` in `courseStorage.ts`, and add a test asserting old data still calculates the same. A field added without backfilling deserialises as `undefined`, which any `!== null` check reads as *set*. Saved data is the one thing here that can't be regenerated.
 - **New route:** add `<Route>` in `App.tsx` above the `*` catch-all, create the page in `src/pages/`.
 - **Deeper store access:** convert `useGradeStore` into a Context provider rather than calling the hook twice (§5).
@@ -326,7 +356,11 @@ Ordered roughly by how likely each is to bite you.
 | Old saved data vanished after an update | `migrate` didn't recognise the shape — check the console and the `version` field | [courseStorage.ts](src/lib/courseStorage.ts), `migrate` |
 | Reload Progress wiped everything | It replaces, never merges (§8). A file that fails validation leaves data intact | `looksLikeProgress` in [progressFile.ts](src/lib/progressFile.ts) |
 | Save downloads a file instead of writing progresses/ | No Vite server behind the page — a static build has no Node process (§8) | `ProgressApiUnavailableError` |
-| A semester disappeared after reload | It had no courses — nothing anchors an empty semester (§4a) | `visibleSemesters` in [semesters.ts](src/lib/semesters.ts) |
+| A semester disappeared after reload | Its anchor is `_manifest.json`; check the folder has one and lists it (§4a, §8) | `persistedSemesters` in [semesters.ts](src/lib/semesters.ts) |
+| Courses came back in the wrong order | The manifest is missing or predates the course, so it fell back to filename order (§8) | `orderCourses` in [progressFile.ts](src/lib/progressFile.ts) |
+| A course's weights total 100 but the grade shows `—` | One of them is marked Bonus, so it doesn't count towards the 100% (§6) | `getTotalWeight` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
+| Apply in Advanced options does nothing | A switched-on option has an empty box; the dialog says which (§7) | `policyDraftErrors` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
+| The letter grade disagrees with the percentage | Expected — the letter follows the *rounded* grade, e.g. 79.6 → 80 → A- (§6) | `toOfficialGrade` in [gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Old courses missing from the panel | They should be under **Unassigned**; check `migrate` backfilled `semester` to `''` | [courseStorage.ts](src/lib/courseStorage.ts) |
 | New Course does nothing | No semester selected — courses must belong to one (§4a) | `openNewCourse` in [Index.tsx](src/pages/Index.tsx) |
 | A course vanishes from the save | Its generated filename failed the server's safety check; the two must agree | `courseFileName` vs `isSafeProgressFileName` |

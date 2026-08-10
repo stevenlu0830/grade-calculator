@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatGrade,
+  formatOfficialGrade,
   formatWeight,
   getGradeBg,
   getGradeColor,
   getLetterGrade,
+  toOfficialGrade,
 } from '@/lib/gradeFormatting';
 
 describe('formatWeight', () => {
@@ -104,5 +106,51 @@ describe('grade colour bands', () => {
     expect(getGradeBg(75)).toBe('bg-grade-average/10');
     expect(getGradeBg(65)).toBe('bg-grade-passing/10');
     expect(getGradeBg(55)).toBe('bg-grade-failing/10');
+  });
+});
+
+
+describe('toOfficialGrade', () => {
+  it('rounds to the whole number a course is recorded with', () => {
+    expect(toOfficialGrade(84.4)).toBe(84);
+    expect(toOfficialGrade(84.6)).toBe(85);
+  });
+
+  it('rounds a half up', () => {
+    expect(toOfficialGrade(79.5)).toBe(80);
+  });
+
+  it('leaves a whole number alone', () => {
+    expect(toOfficialGrade(84)).toBe(84);
+    expect(toOfficialGrade(0)).toBe(0);
+  });
+
+  it('does not clamp — a bonus can genuinely exceed 100', () => {
+    expect(toOfficialGrade(103.6)).toBe(104);
+  });
+
+  it('propagates an unentered grade', () => {
+    expect(toOfficialGrade(null)).toBeNull();
+    expect(formatOfficialGrade(null)).toBe('—');
+  });
+});
+
+describe('formatOfficialGrade', () => {
+  it('shows no decimals, unlike the exact grade beside it', () => {
+    expect(formatOfficialGrade(84.56)).toBe('85');
+    expect(formatGrade(84.56)).toBe('84.56');
+  });
+});
+
+describe('the letter follows the official grade, not the exact one', () => {
+  it('promotes a grade that rounds up into the next band', () => {
+    // 79.6 is recorded as an 80, and an 80 is an A-.
+    expect(getLetterGrade(toOfficialGrade(79.6))).toBe('A-');
+    // Read against the exact figure it would have been a B+, which is the bug.
+    expect(getLetterGrade(79.6)).toBe('B+');
+  });
+
+  it('leaves a grade that rounds down where it was', () => {
+    expect(getLetterGrade(toOfficialGrade(79.4))).toBe('B+');
   });
 });

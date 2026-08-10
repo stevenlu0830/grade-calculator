@@ -10,6 +10,7 @@ import {
   parseSemester,
   semesterLabel,
   semesterYearOptions,
+  persistedSemesters,
   semestersFromCourses,
   visibleSemesters,
 } from '@/lib/semesters';
@@ -128,6 +129,40 @@ describe('semestersFromCourses', () => {
   });
 });
 
+describe('persistedSemesters', () => {
+  it('keeps a semester that has no courses in it', () => {
+    // The saved list is the only thing anchoring an empty semester.
+    expect(persistedSemesters([], ['2026 Winter Term 1'])).toEqual(['2026 Winter Term 1']);
+  });
+
+  it('adopts a semester only a course names', () => {
+    // Older saves had no list at all; without this, deleting that course would
+    // take the semester with it.
+    expect(persistedSemesters([course('A', '2025 Summer Term 1')], [])).toEqual([
+      '2025 Summer Term 1',
+    ]);
+  });
+
+  it('merges both sources without duplicating, most recent first', () => {
+    const courses = [course('A', '2025 Winter Term 1'), course('B', '2026 Summer Term 2')];
+    expect(persistedSemesters(courses, ['2025 Winter Term 1', '2024 Winter Term 2'])).toEqual([
+      '2026 Summer Term 2',
+      '2025 Winter Term 1',
+      '2024 Winter Term 2',
+    ]);
+  });
+
+  it('leaves the unassigned bucket out', () => {
+    // Nobody created it; it exists only while a course has no semester.
+    expect(persistedSemesters([course('A', UNASSIGNED_SEMESTER)], [])).toEqual([]);
+    expect(persistedSemesters([], [UNASSIGNED_SEMESTER])).toEqual([]);
+  });
+
+  it('is empty for nothing at all', () => {
+    expect(persistedSemesters([], [])).toEqual([]);
+  });
+});
+
 describe('visibleSemesters', () => {
   it('shows a newly added semester before it has any courses', () => {
     expect(visibleSemesters([], ['2026 Winter Term 1'])).toEqual(['2026 Winter Term 1']);
@@ -142,6 +177,13 @@ describe('visibleSemesters', () => {
     const courses = [course('A', '2025 Winter Term 1')];
     expect(visibleSemesters(courses, ['2026 Summer Term 2'])).toEqual([
       '2026 Summer Term 2',
+      '2025 Winter Term 1',
+    ]);
+  });
+
+  it('still shows a semester only a course knows about', () => {
+    // A file saved by an older build, or edited by hand.
+    expect(visibleSemesters([course('A', '2025 Winter Term 1')], [])).toEqual([
       '2025 Winter Term 1',
     ]);
   });

@@ -1,12 +1,15 @@
 import { Course, Term } from '@/types/grades';
 
 /**
- * Semesters, stored on each course as a label like `"2026 Summer Term 2"`.
+ * Semesters, stored on each course as a label like `"2026 Summer Term 2"`, and
+ * also as an explicit list alongside the courses.
  *
- * There is no separate semester record: a semester exists because a course
- * says it belongs to one. That keeps the saved file exactly as specified —
- * one `"semester"` key per course — at the cost of an empty semester not
- * surviving a reload, since nothing anchors it.
+ * The list is what lets a semester with no courses in it survive a save and
+ * reload — nothing else would anchor it. Courses still carry their own label, so
+ * the two can disagree: a course can name a semester the list has never heard
+ * of (older saves, hand-edited files). `visibleSemesters` unions both, and
+ * `persistedSemesters` folds the courses' labels back into the list, so the
+ * disagreement heals on the next load rather than losing a semester.
  */
 
 /**
@@ -70,11 +73,26 @@ export function semestersFromCourses(courses: Course[]): string[] {
 }
 
 /**
- * The semesters to show: those in use, plus any added this session that have no
- * courses yet, so a freshly created semester is selectable straight away.
+ * The semesters to show: those in use, plus every one on the saved list, so a
+ * semester stays put after its last course is deleted — or before its first one
+ * is added.
  */
-export function visibleSemesters(courses: Course[], pending: string[]): string[] {
-  const all = new Set([...semestersFromCourses(courses), ...pending]);
+export function visibleSemesters(courses: Course[], semesters: string[]): string[] {
+  const all = new Set([...semestersFromCourses(courses), ...semesters]);
+  return [...all].sort(compareSemestersDescending);
+}
+
+/**
+ * The semester list to store: everything explicitly on it, plus every semester
+ * a course names, so nothing visible is lost on the next load.
+ *
+ * The unassigned bucket is deliberately excluded — it isn't a semester anyone
+ * created, it's where courses with no semester show up, so it should vanish
+ * once none are left.
+ */
+export function persistedSemesters(courses: Course[], semesters: string[]): string[] {
+  const all = new Set([...semesters, ...semestersFromCourses(courses)]);
+  all.delete(UNASSIGNED_SEMESTER);
   return [...all].sort(compareSemestersDescending);
 }
 

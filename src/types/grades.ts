@@ -27,6 +27,14 @@ export interface Breakdown {
    * the percentage they produce.
    */
   fullCreditGrade: number | null;
+  /**
+   * Whether this is extra credit: its weight is added on top of the course
+   * rather than being part of the 100% available.
+   *
+   * A 5% bonus breakdown contributes up to 5 points to the final grade, but the
+   * other breakdowns must still total 100% on their own.
+   */
+  isBonus: boolean;
   /** Singular noun used to auto-name new sub-breakdowns, e.g. "Assignment" → "Assignment 3". */
   subBreakdownLabel: string;
   subBreakdowns: SubBreakdown[];
@@ -42,11 +50,22 @@ export interface Course {
    * The semester this course belongs to, as a label like `"2026 Summer Term 2"`.
    *
    * An empty string means unassigned — courses saved before semesters existed.
-   * There is no separate semester record; a semester exists because courses
-   * name it.
    */
   semester: string;
   breakdowns: Breakdown[];
+}
+
+/**
+ * Everything the app persists.
+ *
+ * `semesters` is stored alongside the courses rather than derived from them, so
+ * a semester with no courses yet survives a save and reload. The order of
+ * `courses` is meaningful: it's the order they're shown in, and saving and
+ * reloading preserves it.
+ */
+export interface GradeData {
+  courses: Course[];
+  semesters: string[];
 }
 
 export type AdvancedOption = 'none' | 'dropLowest' | 'downweight';

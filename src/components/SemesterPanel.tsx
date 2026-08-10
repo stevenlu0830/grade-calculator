@@ -2,7 +2,7 @@ import { Course } from '@/types/grades';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { UNASSIGNED_SEMESTER, countCoursesIn, semesterLabel } from '@/lib/semesters';
-import { CalendarDays, Plus } from 'lucide-react';
+import { CalendarDays, Plus, Trash2 } from 'lucide-react';
 
 interface SemesterPanelProps {
   semesters: string[];
@@ -10,6 +10,7 @@ interface SemesterPanelProps {
   courses: Course[];
   onSelect: (semester: string) => void;
   onAddSemester: () => void;
+  onDeleteSemester: (semester: string) => void;
 }
 
 /** Left panel: add a semester, then pick which one's courses to show. */
@@ -19,6 +20,7 @@ export function SemesterPanel({
   courses,
   onSelect,
   onAddSemester,
+  onDeleteSemester,
 }: SemesterPanelProps) {
   return (
     <aside className="w-60 shrink-0 border-r border-border bg-card/40">
@@ -39,28 +41,48 @@ export function SemesterPanel({
               const count = countCoursesIn(courses, semester);
 
               return (
-                <button
+                // The row is a container rather than one button, because the
+                // delete control is a button and buttons cannot nest.
+                <div
                   key={semester || UNASSIGNED_SEMESTER}
-                  onClick={() => onSelect(semester)}
-                  aria-current={isSelected ? 'true' : undefined}
                   className={cn(
-                    'w-full flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors',
-                    isSelected
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-foreground hover:bg-secondary'
+                    'group flex items-center rounded-md pr-1 transition-colors',
+                    isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
                   )}
                 >
-                  <CalendarDays className="h-4 w-4 shrink-0 opacity-70" />
-                  <span className="flex-1 truncate">{semesterLabel(semester)}</span>
-                  <span
-                    className={cn(
-                      'text-xs tabular-nums',
-                      isSelected ? 'opacity-80' : 'text-muted-foreground'
-                    )}
+                  <button
+                    onClick={() => onSelect(semester)}
+                    aria-current={isSelected ? 'true' : undefined}
+                    className="flex flex-1 min-w-0 items-center gap-2 px-3 py-2 text-left text-sm"
                   >
-                    {count}
-                  </span>
-                </button>
+                    <CalendarDays className="h-4 w-4 shrink-0 opacity-70" />
+                    <span className="flex-1 truncate">{semesterLabel(semester)}</span>
+                    <span
+                      className={cn(
+                        'text-xs tabular-nums',
+                        isSelected ? 'opacity-80' : 'text-muted-foreground'
+                      )}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                  {/* Kept out of the way until the row is hovered or the button
+                      is tabbed to — deleting a semester takes its courses. */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
+                      isSelected
+                        ? 'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground'
+                        : 'text-muted-foreground hover:text-destructive'
+                    )}
+                    onClick={() => onDeleteSemester(semester)}
+                    aria-label={`Delete ${semesterLabel(semester)}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               );
             })}
           </nav>

@@ -1,4 +1,4 @@
-import { Breakdown, Course, SubBreakdown } from '@/types/grades';
+import { Breakdown, Course, GradeData, SubBreakdown } from '@/types/grades';
 import { LEGACY_FULL_MARKS } from '@/lib/gradeCalculations';
 import { createId } from '@/lib/id';
 
@@ -10,8 +10,8 @@ import { createId } from '@/lib/id';
  * implementation without touching state logic.
  */
 export interface CourseStorage {
-  load(): Course[];
-  save(courses: Course[]): void;
+  load(): GradeData;
+  save(data: GradeData): void;
 }
 
 export const STORAGE_KEY = 'ubc-grade-calculator-data';
@@ -23,12 +23,15 @@ export const STORAGE_KEY = 'ubc-grade-calculator-data';
  * 2 → `{ version, courses }` with breakdown wording and marks out of full marks.
  * 3 → adds `fullCreditGrade`.
  * 4 → adds `semester` on each course.
+ * 5 → adds a `semesters` list to the envelope and `isBonus` on each breakdown.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 interface StoredData {
   version: number;
   courses: Course[];
+  /** Added in version 5; absent in anything older, which reads as "none saved". */
+  semesters?: string[];
 }
 
 /**
@@ -93,6 +96,7 @@ function migrateLegacy(courses: LegacyCourse[]): Course[] {
         downweightLowestCount: legacyBreakdown.downweightLowestCount ?? null,
         downweightPercent: legacyBreakdown.downweightPercent ?? null,
         fullCreditGrade: null,
+        isBonus: false,
         // Best available guess for auto-naming; the student can rename freely.
         subBreakdownLabel: name || 'Item',
         subBreakdowns,
@@ -119,6 +123,8 @@ function normalizeCourses(courses: Course[]): Course[] {
     breakdowns: (course.breakdowns ?? []).map(breakdown => ({
       ...breakdown,
       fullCreditGrade: breakdown.fullCreditGrade ?? null,
+      // Breakdowns saved before bonus existed all counted towards the 100%.
+      isBonus: breakdown.isBonus ?? false,
       subBreakdowns: (breakdown.subBreakdowns ?? []).map(sub => ({
         ...sub,
         fullMarks: sub.fullMarks ?? null,
@@ -127,17 +133,35 @@ function normalizeCourses(courses: Course[]): Course[] {
   }));
 }
 
-/** Accepts the current envelope, an older envelope, or bare v1 data. */
-export function migrate(raw: unknown): Course[] {
-  if (isLegacy(raw)) return normalizeCourses(migrateLegacy(raw));
+/** The saved semester list, or none for data written before it existed. */
+function readSemesters(raw: unknown): string[] {
+  if (raw === null || typeof raw !== 'object') return [];
+  const { semesters } = raw as StoredData;
+  return Array.isArray(semesters) ? semesters.filter(s => typeof s === 'string') : [];
+}
+
+/**
+ * Accepts the current envelope, an older envelope, or bare v1 data.
+ *
+ * Anything from before version 5 has no semester list, which is not a loss: the
+ * semesters those courses name are folded back in by `persistedSemesters` when
+ * the store takes the data on.
+ */
+export function migrate(raw: unknown): GradeData {
+  const semesters = readSemesters(raw);
+
+  if (isLegacy(raw)) return { courses: normalizeCourses(migrateLegacy(raw)), semesters };
 
   if (raw !== null && typeof raw === 'object' && 'courses' in raw) {
     const stored = raw as StoredData;
-    return Array.isArray(stored.courses) ? normalizeCourses(stored.courses) : [];
+    return {
+      courses: Array.isArray(stored.courses) ? normalizeCourses(stored.courses) : [],
+      semesters,
+    };
   }
 
   // An empty v1 array, or anything unrecognisable.
-  return Array.isArray(raw) ? normalizeCourses(raw as Course[]) : [];
+  return { courses: Array.isArray(raw) ? normalizeCourses(raw as Course[]) : [], semesters };
 }
 
 /**
@@ -146,19 +170,19 @@ export function migrate(raw: unknown): Course[] {
  * and losing persistence should not take the app down with it.
  */
 export const localCourseStorage: CourseStorage = {
-  load(): Course[] {
+  load(): GradeData {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) return migrate(JSON.parse(saved));
     } catch (error) {
       console.error('Failed to load saved data:', error);
     }
-    return [];
+    return { courses: [], semesters: [] };
   },
 
-  save(courses: Course[]): void {
+  save({ courses, semesters }: GradeData): void {
     try {
-      const payload: StoredData = { version: SCHEMA_VERSION, courses };
+      const payload: StoredData = { version: SCHEMA_VERSION, courses, semesters };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (error) {
       console.error('Failed to save data:', error);

@@ -8,7 +8,12 @@ import {
   resolveProgressPath,
   writeProgressFiles,
 } from '../../vite-plugin-progress-files';
-import { buildProgressFiles, courseFileName, parseProgressFiles } from '@/lib/progressFile';
+import {
+  PROGRESS_MANIFEST_FILE,
+  buildProgressFiles,
+  courseFileName,
+  parseProgressFiles,
+} from '@/lib/progressFile';
 import { Course } from '@/types/grades';
 
 /**
@@ -80,6 +85,9 @@ describe('writeProgressFiles against a real folder', () => {
     breakdowns: [],
   });
 
+  /** Everything saved: the manifest is always one of the files. */
+  const saved = (courses: Course[]) => buildProgressFiles({ courses, semesters: [] });
+
   const contents = async () => (await fs.readdir(dir)).sort();
 
   beforeEach(async () => {
@@ -90,31 +98,41 @@ describe('writeProgressFiles against a real folder', () => {
     await fs.rm(path.dirname(dir), { recursive: true, force: true });
   });
 
-  it('creates the folder and writes one file per course', async () => {
+  it('creates the folder and writes one file per course, plus the manifest', async () => {
     const result = await writeProgressFiles(
       dir,
-      buildProgressFiles([makeCourse('CPSC 330'), makeCourse('Databases in Data Science')])
+      saved([makeCourse('CPSC 330'), makeCourse('Databases in Data Science')])
     );
 
-    expect(result.written).toEqual(['CPSC_330.json', 'Databases_in_Data_Science.json']);
-    expect(await contents()).toEqual(['CPSC_330.json', 'Databases_in_Data_Science.json']);
+    expect(result.written).toEqual([
+      PROGRESS_MANIFEST_FILE,
+      'CPSC_330.json',
+      'Databases_in_Data_Science.json',
+    ]);
+    expect(await contents()).toEqual([
+      'CPSC_330.json',
+      'Databases_in_Data_Science.json',
+      PROGRESS_MANIFEST_FILE,
+    ]);
   });
 
   // The reported bug: deleting every course and saving must empty the folder,
   // not leave the previous save sitting there to be reloaded.
-  it('empties the folder when there are no courses', async () => {
-    await writeProgressFiles(dir, buildProgressFiles([makeCourse('CPSC 330')]));
+  it('empties the folder when there are no courses, bar the manifest', async () => {
+    await writeProgressFiles(dir, saved([makeCourse('CPSC 330')]));
 
-    const result = await writeProgressFiles(dir, buildProgressFiles([]));
+    const result = await writeProgressFiles(dir, saved([]));
 
-    expect(result.written).toEqual([]);
+    // The manifest stays behind on purpose: it's what remembers the semesters
+    // when every course in them is gone.
+    expect(result.written).toEqual([PROGRESS_MANIFEST_FILE]);
     expect(result.removed).toEqual(['CPSC_330.json']);
-    expect(await contents()).toEqual([]);
+    expect(await contents()).toEqual([PROGRESS_MANIFEST_FILE]);
   });
 
   it('reloads nothing after an empty save', async () => {
-    await writeProgressFiles(dir, buildProgressFiles([makeCourse('CPSC 330')]));
-    await writeProgressFiles(dir, buildProgressFiles([]));
+    await writeProgressFiles(dir, saved([makeCourse('CPSC 330')]));
+    await writeProgressFiles(dir, saved([]));
 
     const { courses } = parseProgressFiles(await listProgressFiles(dir));
     expect(courses).toEqual([]);
@@ -128,24 +146,21 @@ describe('writeProgressFiles against a real folder', () => {
   });
 
   it('removes only the files whose course is gone', async () => {
-    await writeProgressFiles(
-      dir,
-      buildProgressFiles([makeCourse('CPSC 330'), makeCourse('MATH 200')])
-    );
+    await writeProgressFiles(dir, saved([makeCourse('CPSC 330'), makeCourse('MATH 200')]));
 
-    const result = await writeProgressFiles(dir, buildProgressFiles([makeCourse('MATH 200')]));
+    const result = await writeProgressFiles(dir, saved([makeCourse('MATH 200')]));
 
     expect(result.removed).toEqual(['CPSC_330.json']);
-    expect(await contents()).toEqual(['MATH_200.json']);
+    expect(await contents()).toEqual(['MATH_200.json', PROGRESS_MANIFEST_FILE]);
   });
 
   it('never deletes non-JSON files, even when clearing', async () => {
-    await writeProgressFiles(dir, buildProgressFiles([makeCourse('CPSC 330')]));
+    await writeProgressFiles(dir, saved([makeCourse('CPSC 330')]));
     await fs.writeFile(path.join(dir, 'notes.txt'), 'keep me', 'utf8');
 
-    await writeProgressFiles(dir, buildProgressFiles([]));
+    await writeProgressFiles(dir, saved([]));
 
-    expect(await contents()).toEqual(['notes.txt']);
+    expect(await contents()).toEqual([PROGRESS_MANIFEST_FILE, 'notes.txt']);
   });
 
   it('refuses to write outside the folder', async () => {
@@ -159,12 +174,13 @@ describe('writeProgressFiles against a real folder', () => {
   });
 
   it('round-trips through listProgressFiles', async () => {
-    const saved = [makeCourse('CPSC 330'), makeCourse('MATH 200')];
-    await writeProgressFiles(dir, buildProgressFiles(saved));
+    // Written in an order the filenames don't sort in, to prove the manifest —
+    // not the directory listing — decides how they come back.
+    await writeProgressFiles(dir, saved([makeCourse('MATH 200'), makeCourse('CPSC 330')]));
 
     const { courses, skipped } = parseProgressFiles(await listProgressFiles(dir));
     expect(skipped).toEqual([]);
-    expect(courses.map(c => c.name)).toEqual(['CPSC 330', 'MATH 200']);
+    expect(courses.map(c => c.name)).toEqual(['MATH 200', 'CPSC 330']);
   });
 
   it('lists nothing when the folder does not exist', async () => {

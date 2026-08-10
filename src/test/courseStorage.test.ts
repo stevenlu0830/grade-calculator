@@ -26,16 +26,21 @@ const legacyData = [
   },
 ];
 
+/** Courses alone; `migrate` returns them wrapped with the semester list. */
+const coursesOf = (raw: unknown) => migrate(raw).courses;
+
 describe('migrate', () => {
+  const empty = { courses: [], semesters: [] };
+
   it('returns an empty list for nothing saved', () => {
-    expect(migrate([])).toEqual([]);
-    expect(migrate(null)).toEqual([]);
-    expect(migrate(undefined)).toEqual([]);
+    expect(migrate([])).toEqual(empty);
+    expect(migrate(null)).toEqual(empty);
+    expect(migrate(undefined)).toEqual(empty);
   });
 
   describe('from version 1', () => {
     it('renames components to breakdowns', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
 
       expect(course.name).toBe('CPSC 121');
       expect(course.breakdowns).toHaveLength(1);
@@ -44,7 +49,7 @@ describe('migrate', () => {
     });
 
     it('reads old grades as marks out of 100', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
       expect(course.breakdowns[0].subBreakdowns).toMatchObject([
         { achievedMarks: 60, fullMarks: 100 },
         { achievedMarks: 80, fullMarks: 100 },
@@ -53,34 +58,34 @@ describe('migrate', () => {
     });
 
     it('preserves ids, so nothing re-keys on load', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
       expect(course.id).toBe('course-1');
       expect(course.breakdowns[0].id).toBe('comp-1');
       expect(course.breakdowns[0].subBreakdowns[0].id).toBe('s1');
     });
 
     it('rewires parent references to the migrated ids', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
       const breakdown = course.breakdowns[0];
       expect(breakdown.courseId).toBe(course.id);
       expect(breakdown.subBreakdowns.every(s => s.breakdownId === breakdown.id)).toBe(true);
     });
 
     it('carries the grading policy across', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
       expect(course.breakdowns[0].dropLowestCount).toBe(1);
     });
 
     // The whole point of defaulting to 100 full marks.
     it('calculates to exactly the grade it did before', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
       // Old behaviour: drop lowest of [60,80,100] -> mean(80,100) = 90
       expect(calculateBreakdownGrade(course.breakdowns[0])).toBe(90);
     });
 
     it('tolerates missing fields', () => {
       const sparse = [{ components: [{ subComponents: [{}] }] }];
-      const [course] = migrate(sparse);
+      const [course] = coursesOf(sparse);
 
       expect(course.name).toBe('');
       expect(course.id).toBeTruthy();
@@ -92,7 +97,7 @@ describe('migrate', () => {
     });
 
     it('gives migrated breakdowns a usable sub-breakdown label', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
       expect(course.breakdowns[0].subBreakdownLabel).toBe('Assignments');
     });
   });
@@ -125,7 +130,7 @@ describe('migrate', () => {
     };
 
     it('fills a missing fullCreditGrade with null, not undefined', () => {
-      const [course] = migrate(v2);
+      const [course] = coursesOf(v2);
       const breakdown = course.breakdowns[0];
 
       expect(breakdown.fullCreditGrade).toBeNull();
@@ -135,7 +140,7 @@ describe('migrate', () => {
     });
 
     it('leaves the grade unchanged, since full credit defaults to off', () => {
-      const [course] = migrate(v2);
+      const [course] = coursesOf(v2);
       expect(calculateBreakdownGrade(course.breakdowns[0])).toBe(59);
     });
 
@@ -149,7 +154,7 @@ describe('migrate', () => {
           },
         ],
       };
-      const [course] = migrate(withPolicy);
+      const [course] = coursesOf(withPolicy);
       expect(course.breakdowns[0].fullCreditGrade).toBe(60);
       expect(calculateBreakdownGrade(course.breakdowns[0])).toBeCloseTo(98.33333333333333, 10);
     });
@@ -169,12 +174,12 @@ describe('migrate', () => {
           },
         ],
       };
-      const [course] = migrate(noFullMarks);
+      const [course] = coursesOf(noFullMarks);
       expect(course.breakdowns[0].subBreakdowns[0].fullMarks).toBeNull();
     });
 
     it('gives v1 data the new field as well', () => {
-      const [course] = migrate(legacyData);
+      const [course] = coursesOf(legacyData);
       expect(course.breakdowns[0].fullCreditGrade).toBeNull();
     });
   });
@@ -185,7 +190,7 @@ describe('migrate', () => {
         version: SCHEMA_VERSION,
         courses: [{ id: 'c', name: 'MATH 200', semester: '2026 Winter Term 1', breakdowns: [] }],
       };
-      expect(migrate(current)).toEqual(current.courses);
+      expect(migrate(current).courses).toEqual(current.courses);
     });
 
     it('backfills a missing semester as unassigned', () => {
@@ -195,7 +200,7 @@ describe('migrate', () => {
         version: 3,
         courses: [{ id: 'c', name: 'MATH 200', breakdowns: [] }],
       };
-      const [course] = migrate(beforeSemesters);
+      const [course] = coursesOf(beforeSemesters);
 
       expect(course.semester).toBe('');
       expect(course.semester).not.toBeUndefined();
@@ -206,11 +211,77 @@ describe('migrate', () => {
         version: SCHEMA_VERSION,
         courses: [{ id: 'c', name: 'MATH 200', semester: '2026 Summer Term 2', breakdowns: [] }],
       };
-      expect(migrate(withSemester)[0].semester).toBe('2026 Summer Term 2');
+      expect(coursesOf(withSemester)[0].semester).toBe('2026 Summer Term 2');
     });
 
     it('survives an envelope with no courses', () => {
-      expect(migrate({ version: SCHEMA_VERSION })).toEqual([]);
+      expect(migrate({ version: SCHEMA_VERSION }).courses).toEqual([]);
+    });
+  });
+
+  describe('the semester list', () => {
+    it('reads back the semesters that were saved', () => {
+      const saved = {
+        version: SCHEMA_VERSION,
+        courses: [],
+        semesters: ['2026 Winter Term 1', '2025 Summer Term 2'],
+      };
+      // An empty semester has no course to anchor it, so the list is the only
+      // record that it exists at all.
+      expect(migrate(saved).semesters).toEqual(['2026 Winter Term 1', '2025 Summer Term 2']);
+    });
+
+    it('is empty for data saved before the list existed', () => {
+      const v4 = {
+        version: 4,
+        courses: [{ id: 'c', name: 'MATH 200', semester: '2026 Winter Term 1', breakdowns: [] }],
+      };
+      // Not a loss: the store folds the courses' own semesters back in.
+      expect(migrate(v4).semesters).toEqual([]);
+    });
+
+    it('ignores a semester list that is not a list of strings', () => {
+      expect(migrate({ version: 5, courses: [], semesters: 'nope' }).semesters).toEqual([]);
+      expect(migrate({ version: 5, courses: [], semesters: [1, '2026 Winter Term 1'] }).semesters)
+        .toEqual(['2026 Winter Term 1']);
+    });
+  });
+
+  describe('bonus breakdowns', () => {
+    const withBonus = (isBonus: unknown) => ({
+      version: SCHEMA_VERSION,
+      courses: [
+        {
+          id: 'c',
+          name: 'MATH 200',
+          semester: '2026 Winter Term 1',
+          breakdowns: [
+            {
+              id: 'b',
+              courseId: 'c',
+              name: 'Extra credit',
+              weight: 5,
+              dropLowestCount: null,
+              downweightLowestCount: null,
+              downweightPercent: null,
+              fullCreditGrade: null,
+              isBonus,
+              subBreakdownLabel: 'Item',
+              subBreakdowns: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    it('keeps an explicit bonus flag', () => {
+      expect(coursesOf(withBonus(true))[0].breakdowns[0].isBonus).toBe(true);
+    });
+
+    it('reads a breakdown saved before bonus existed as a normal one', () => {
+      // Everything that predates the flag counted towards the 100%.
+      expect(coursesOf(withBonus(undefined))[0].breakdowns[0].isBonus).toBe(false);
+      expect(coursesOf(legacyData)[0].breakdowns[0].isBonus).toBe(false);
     });
   });
 });

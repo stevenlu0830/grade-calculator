@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { Course } from '@/types/grades';
+import { Course, GradeData } from '@/types/grades';
 import { CourseStorage } from '@/lib/courseStorage';
 import { advancedOptionUpdate, NO_POLICY } from '@/lib/gradePolicies';
 import { useGradeStore, NewBreakdown } from '@/hooks/useGradeStore';
 
 /** In-memory storage, so the store can be driven without a browser. */
-const memoryStorage = (initial: Course[] = []): CourseStorage & { saved: Course[] } => {
+const memoryStorage = (
+  initial: Partial<GradeData> = {}
+): CourseStorage & { saved: GradeData } => {
   const box = {
-    saved: initial,
+    saved: { courses: initial.courses ?? [], semesters: initial.semesters ?? [] },
     load: () => box.saved,
-    save: (courses: Course[]) => {
-      box.saved = courses;
+    save: (data: GradeData) => {
+      box.saved = data;
     },
   };
   return box;
@@ -216,6 +218,130 @@ describe('persistence', () => {
 
     act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
 
-    expect(storage.saved.map(c => c.name)).toEqual(['CPSC 121']);
+    expect(storage.saved.courses.map(c => c.name)).toEqual(['CPSC 121']);
+  });
+
+  it('saves the semester list alongside the courses', () => {
+    const storage = memoryStorage();
+    const { result } = renderHook(() => useGradeStore(storage));
+
+    act(() => result.current.addSemester('2026 Winter Term 1'));
+
+    // Nothing else records an empty semester, so this is what makes it survive.
+    expect(storage.saved.semesters).toEqual(['2026 Winter Term 1']);
+    expect(storage.saved.courses).toEqual([]);
+  });
+
+  it('adopts the semesters its courses name, for data saved before the list', () => {
+    const legacy = [
+      { id: 'c', name: 'MATH 200', semester: '2025 Winter Term 2', breakdowns: [] },
+    ];
+    const { result } = renderHook(() => useGradeStore(memoryStorage({ courses: legacy })));
+
+    // Otherwise deleting that course would take the semester with it.
+    expect(result.current.semesters).toEqual(['2025 Winter Term 2']);
+  });
+
+  it('leaves the unassigned bucket off the list', () => {
+    const legacy = [{ id: 'c', name: 'Old', semester: '', breakdowns: [] }];
+    const { result } = renderHook(() => useGradeStore(memoryStorage({ courses: legacy })));
+
+    // It isn't a semester anyone created; it's where course-less courses land.
+    expect(result.current.semesters).toEqual([]);
+  });
+});
+
+describe('semesters', () => {
+  it('keeps an added semester even with no courses in it', () => {
+    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+
+    act(() => result.current.addSemester('2026 Winter Term 1'));
+
+    expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
+  });
+
+  it('does not add the same semester twice', () => {
+    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+
+    act(() => result.current.addSemester('2026 Winter Term 1'));
+    act(() => result.current.addSemester('2026 Winter Term 1'));
+
+    expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
+  });
+
+  it('records the semester a course is added to', () => {
+    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+
+    act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
+
+    expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
+  });
+
+  it('keeps a semester after its last course is deleted', () => {
+    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+
+    act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
+    act(() => result.current.deleteCourse(result.current.courses[0].id));
+
+    expect(result.current.courses).toEqual([]);
+    expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
+  });
+
+  it('deletes a semester along with every course in it', () => {
+    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+
+    act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
+    act(() => result.current.addCourse('MATH 100', '2026 Winter Term 1'));
+    act(() => result.current.addCourse('MATH 101', '2026 Winter Term 2'));
+
+    act(() => result.current.deleteSemester('2026 Winter Term 1'));
+
+    expect(result.current.semesters).toEqual(['2026 Winter Term 2']);
+    expect(result.current.courses.map(c => c.name)).toEqual(['MATH 101']);
+  });
+
+  it('deletes courses saved with no semester when the unassigned bucket goes', () => {
+    const legacy = [{ id: 'c', name: 'Old', semester: '', breakdowns: [] }];
+    const { result } = renderHook(() => useGradeStore(memoryStorage({ courses: legacy })));
+
+    act(() => result.current.deleteSemester(''));
+
+    expect(result.current.courses).toEqual([]);
+  });
+});
+
+describe('importData', () => {
+  it('replaces courses and semesters together', () => {
+    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+
+    act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
+    act(() =>
+      result.current.importData({
+        courses: [{ id: 'x', name: 'MATH 100', semester: '2025 Winter Term 1', breakdowns: [] }],
+        semesters: ['2025 Winter Term 1', '2025 Summer Term 1'],
+      })
+    );
+
+    expect(result.current.courses.map(c => c.name)).toEqual(['MATH 100']);
+    expect(result.current.semesters).toEqual(['2025 Summer Term 1', '2025 Winter Term 1']);
+  });
+
+  it('keeps the imported course order rather than sorting it', () => {
+    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+    const course = (name: string): Course => ({
+      id: `id-${name}`,
+      name,
+      semester: '2026 Winter Term 1',
+      breakdowns: [],
+    });
+
+    act(() =>
+      result.current.importData({
+        courses: [course('Zoology'), course('Anthropology')],
+        semesters: [],
+      })
+    );
+
+    expect(result.current.courses.map(c => c.name)).toEqual(['Zoology', 'Anthropology']);
   });
 });

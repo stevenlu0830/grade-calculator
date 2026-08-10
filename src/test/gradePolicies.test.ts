@@ -6,14 +6,19 @@ import {
   DEFAULT_DROP_LOWEST_COUNT,
   MarkPair,
   NO_POLICY,
+  NO_POLICY_DRAFT,
   advancedOptionUpdate,
   applyDownweightLowest,
   applyDropLowest,
   applyFullCreditGrade,
   clampPercent,
+  describeDraftErrors,
   describePolicy,
   getActiveAdvancedOption,
+  policyDraftErrors,
+  policyFromDraft,
   sortByPercentage,
+  toPolicyDraft,
   totalPercentage,
 } from '@/lib/gradePolicies';
 
@@ -26,6 +31,7 @@ const breakdown = (overrides: Partial<Breakdown> = {}): Breakdown => ({
   downweightLowestCount: null,
   downweightPercent: null,
   fullCreditGrade: null,
+  isBonus: false,
   subBreakdownLabel: 'Item',
   subBreakdowns: [],
   ...overrides,
@@ -298,5 +304,163 @@ describe('clampPercent', () => {
     expect(clampPercent(-10)).toBe(0);
     expect(clampPercent(50)).toBe(50);
     expect(clampPercent(150)).toBe(100);
+  });
+});
+
+
+describe('describePolicy with bonus', () => {
+  it('says so, because it changes what the weight means', () => {
+    expect(describePolicy({ ...NO_POLICY, isBonus: true })).toBe('Bonus');
+  });
+
+  it('reads first, ahead of the rules about which marks count', () => {
+    expect(describePolicy({ ...NO_POLICY, isBonus: true, dropLowestCount: 2 })).toBe(
+      'Bonus · Drop lowest 2'
+    );
+  });
+
+  it('stays quiet for an ordinary breakdown', () => {
+    expect(describePolicy({ ...NO_POLICY, isBonus: false })).toBeNull();
+  });
+});
+
+describe('toPolicyDraft', () => {
+  it('opens every switch off for a policy with no rules', () => {
+    expect(NO_POLICY_DRAFT).toMatchObject({
+      dropLowest: false,
+      downweight: false,
+      fullCredit: false,
+      isBonus: false,
+    });
+  });
+
+  it('pre-fills the boxes of switched-off options with their defaults', () => {
+    // So switching one on shows a usable number rather than an empty field.
+    expect(NO_POLICY_DRAFT.dropLowestCount).toBe(String(DEFAULT_DROP_LOWEST_COUNT));
+    expect(NO_POLICY_DRAFT.downweightLowestCount).toBe(String(DEFAULT_DOWNWEIGHT_COUNT));
+    expect(NO_POLICY_DRAFT.downweightPercent).toBe(String(DEFAULT_DOWNWEIGHT_PERCENT));
+  });
+
+  it('leaves full credit blank, since there is no sensible guess', () => {
+    expect(NO_POLICY_DRAFT.fullCreditGrade).toBe('');
+  });
+
+  it('shows a saved policy switched on, with its own numbers', () => {
+    const draft = toPolicyDraft({ ...NO_POLICY, dropLowestCount: 3, fullCreditGrade: 80 });
+
+    expect(draft).toMatchObject({
+      dropLowest: true,
+      dropLowestCount: '3',
+      fullCredit: true,
+      fullCreditGrade: '80',
+    });
+  });
+
+  it('treats an explicit zero as set, not absent', () => {
+    expect(toPolicyDraft({ ...NO_POLICY, fullCreditGrade: 0 })).toMatchObject({
+      fullCredit: true,
+      fullCreditGrade: '0',
+    });
+  });
+
+  it('round-trips a policy unchanged', () => {
+    const policy = {
+      ...NO_POLICY,
+      downweightLowestCount: 2,
+      downweightPercent: 25,
+      fullCreditGrade: 90,
+      isBonus: true,
+    };
+    expect(policyFromDraft(toPolicyDraft(policy))).toEqual(policy);
+  });
+});
+
+describe('policyDraftErrors', () => {
+  it('is happy with a draft where nothing is switched on', () => {
+    expect(policyDraftErrors(NO_POLICY_DRAFT)).toEqual([]);
+  });
+
+  it('names a switched-on option whose box was emptied', () => {
+    // Clearing the box to retype it is fine; committing it that way is not.
+    const draft = { ...NO_POLICY_DRAFT, dropLowest: true, dropLowestCount: '' };
+    expect(policyDraftErrors(draft)).toEqual(['Drop Lowest']);
+  });
+
+  it('names both downweight boxes independently', () => {
+    const draft = {
+      ...NO_POLICY_DRAFT,
+      downweight: true,
+      downweightLowestCount: '',
+      downweightPercent: '',
+    };
+    expect(policyDraftErrors(draft)).toEqual([
+      'Downweight (how many)',
+      'Downweight (by how much)',
+    ]);
+  });
+
+  it('catches full credit switched on and left blank', () => {
+    expect(policyDraftErrors({ ...NO_POLICY_DRAFT, fullCredit: true })).toEqual(['Full Credit']);
+  });
+
+  it('ignores an empty box belonging to a switched-off option', () => {
+    const draft = { ...NO_POLICY_DRAFT, dropLowestCount: '', downweightPercent: '' };
+    expect(policyDraftErrors(draft)).toEqual([]);
+  });
+
+  it('rejects whitespace and anything unparseable', () => {
+    expect(policyDraftErrors({ ...NO_POLICY_DRAFT, dropLowest: true, dropLowestCount: '  ' }))
+      .toEqual(['Drop Lowest']);
+    expect(policyDraftErrors({ ...NO_POLICY_DRAFT, dropLowest: true, dropLowestCount: 'abc' }))
+      .toEqual(['Drop Lowest']);
+  });
+});
+
+describe('describeDraftErrors', () => {
+  it('says nothing when there is nothing to say', () => {
+    expect(describeDraftErrors([])).toBeNull();
+  });
+
+  it('names one field', () => {
+    expect(describeDraftErrors(['Full Credit'])).toContain('Full Credit');
+  });
+
+  it('joins several readably', () => {
+    expect(describeDraftErrors(['Drop Lowest', 'Full Credit'])).toContain(
+      'Drop Lowest and Full Credit'
+    );
+  });
+});
+
+describe('policyFromDraft', () => {
+  it('keeps the two marks policies mutually exclusive', () => {
+    const draft = { ...NO_POLICY_DRAFT, dropLowest: true, downweight: true };
+    expect(policyFromDraft(draft)).toMatchObject({
+      dropLowestCount: 1,
+      downweightLowestCount: null,
+      downweightPercent: null,
+    });
+  });
+
+  it('clears a policy that was switched off', () => {
+    const draft = { ...toPolicyDraft({ ...NO_POLICY, dropLowestCount: 3 }), dropLowest: false };
+    expect(policyFromDraft(draft)).toMatchObject(NO_POLICY);
+  });
+
+  it('clamps a percentage on commit rather than on every keystroke', () => {
+    // Typing "100" passes through "1" and "10"; clamping as it went would have
+    // rewritten the box under the student's cursor.
+    const draft = { ...NO_POLICY_DRAFT, fullCredit: true, fullCreditGrade: '150' };
+    expect(policyFromDraft(draft).fullCreditGrade).toBe(100);
+  });
+
+  it('keeps counts whole and at least one', () => {
+    const draft = { ...NO_POLICY_DRAFT, dropLowest: true, dropLowestCount: '2.7' };
+    expect(policyFromDraft(draft).dropLowestCount).toBe(2);
+    expect(policyFromDraft({ ...draft, dropLowestCount: '0' }).dropLowestCount).toBe(1);
+  });
+
+  it('carries the bonus flag through untouched', () => {
+    expect(policyFromDraft({ ...NO_POLICY_DRAFT, isBonus: true }).isBonus).toBe(true);
   });
 });

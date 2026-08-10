@@ -26,6 +26,8 @@ export interface GradingPolicy {
   downweightLowestCount: number | null;
   downweightPercent: number | null;
   fullCreditGrade: number | null;
+  /** Extra credit: the weight lands on top of the course's 100% rather than in it. */
+  isBonus: boolean;
 }
 
 /**
@@ -50,6 +52,7 @@ export const NO_POLICY: GradingPolicy = Object.freeze({
   downweightLowestCount: null,
   downweightPercent: null,
   fullCreditGrade: null,
+  isBonus: false,
 });
 
 export const DEFAULT_DROP_LOWEST_COUNT = 1;
@@ -135,6 +138,9 @@ export function describePolicy(policy: GradingPolicy): string | null {
   const { dropLowestCount, downweightLowestCount, downweightPercent, fullCreditGrade } = policy;
   const parts: string[] = [];
 
+  // First, because it changes what the breakdown's weight means.
+  if (policy.isBonus) parts.push('Bonus');
+
   if (dropLowestCount && dropLowestCount > 0) {
     parts.push(`Drop lowest ${dropLowestCount}`);
   } else if (
@@ -152,6 +158,131 @@ export function describePolicy(policy: GradingPolicy): string | null {
 
   return parts.length > 0 ? parts.join(' · ') : null;
 }
+
+// --- Editing a policy -------------------------------------------------------
+
+/**
+ * A policy mid-edit, with every number held as raw text.
+ *
+ * A `GradingPolicy` can't represent "switched on, box currently empty" — a null
+ * count *is* what "off" means — so clearing a field to retype it would silently
+ * turn the option off, or snap back to a default. The draft separates the two:
+ * a boolean says whether the option is on, and the text says what's in the box,
+ * blank included. `policyDraftErrors` then rejects blanks at commit time.
+ */
+export interface PolicyDraft {
+  dropLowest: boolean;
+  dropLowestCount: string;
+  downweight: boolean;
+  downweightLowestCount: string;
+  downweightPercent: string;
+  fullCredit: boolean;
+  fullCreditGrade: string;
+  isBonus: boolean;
+}
+
+const asDraftText = (value: number | null) => (value === null ? '' : String(value));
+
+/**
+ * Seeds a draft from a saved policy.
+ *
+ * A switched-off option still carries its default in the box, so switching it on
+ * shows a usable starting value. Full credit is the exception: it opens blank on
+ * purpose, so the student states the threshold rather than accepting a guess.
+ */
+export function toPolicyDraft(policy: GradingPolicy): PolicyDraft {
+  const option = getActiveAdvancedOption(policy);
+
+  return {
+    dropLowest: option === 'dropLowest',
+    dropLowestCount: asDraftText(policy.dropLowestCount ?? DEFAULT_DROP_LOWEST_COUNT),
+    downweight: option === 'downweight',
+    downweightLowestCount: asDraftText(
+      policy.downweightLowestCount ?? DEFAULT_DOWNWEIGHT_COUNT
+    ),
+    downweightPercent: asDraftText(policy.downweightPercent ?? DEFAULT_DOWNWEIGHT_PERCENT),
+    fullCredit: policy.fullCreditGrade !== null,
+    fullCreditGrade: asDraftText(policy.fullCreditGrade),
+    isBonus: policy.isBonus,
+  };
+}
+
+/** A blank draft, for the add-breakdown dialog. */
+export const NO_POLICY_DRAFT: PolicyDraft = Object.freeze(toPolicyDraft(NO_POLICY));
+
+const isFilled = (raw: string) => raw.trim() !== '' && !Number.isNaN(Number(raw));
+
+/**
+ * The labels of any switched-on fields left empty (or unparseable).
+ *
+ * Empty is allowed while typing — that's the point of the draft — but not on
+ * commit, so callers apply only when this comes back empty.
+ */
+export function policyDraftErrors(draft: PolicyDraft): string[] {
+  const blank: string[] = [];
+
+  if (draft.dropLowest && !isFilled(draft.dropLowestCount)) blank.push('Drop Lowest');
+  if (draft.downweight) {
+    if (!isFilled(draft.downweightLowestCount)) blank.push('Downweight (how many)');
+    if (!isFilled(draft.downweightPercent)) blank.push('Downweight (by how much)');
+  }
+  if (draft.fullCredit && !isFilled(draft.fullCreditGrade)) blank.push('Full Credit');
+
+  return blank;
+}
+
+/**
+ * Why a draft can't be committed, or `null` when it can.
+ *
+ * Lives beside `describePolicy` so the two speak about options the same way.
+ */
+export function describeDraftErrors(blank: string[]): string | null {
+  if (blank.length === 0) return null;
+  const fields = blank.length === 1 ? blank[0] : `${blank.slice(0, -1).join(', ')} and ${blank.at(-1)}`;
+  return `Enter a number for ${fields}. An option that's switched on can't have an empty box.`;
+}
+
+/** At least one item, whole — the counts are "how many of them", after all. */
+const toCount = (raw: string, fallback: number) =>
+  isFilled(raw) ? Math.max(1, Math.trunc(Number(raw))) : fallback;
+
+const toPercent = (raw: string, fallback: number) =>
+  clampPercent(isFilled(raw) ? Number(raw) : fallback);
+
+/**
+ * The committed policy for a draft.
+ *
+ * Clamping happens here rather than on each keystroke, so typing "100" doesn't
+ * get rewritten to "10" the moment "1" and "0" have been typed. Blank fields
+ * fall back to their defaults; callers reject them via `policyDraftErrors`
+ * first, so that only matters for a draft applied without checking.
+ */
+export function policyFromDraft(draft: PolicyDraft): GradingPolicy {
+  const option: AdvancedOption = draft.dropLowest
+    ? 'dropLowest'
+    : draft.downweight
+      ? 'downweight'
+      : 'none';
+
+  // Routed through `advancedOptionUpdate`, which returns a fresh object, so
+  // mutual exclusivity is enforced in exactly one place.
+  const marks = advancedOptionUpdate(option);
+
+  if (option === 'dropLowest') {
+    marks.dropLowestCount = toCount(draft.dropLowestCount, DEFAULT_DROP_LOWEST_COUNT);
+  } else if (option === 'downweight') {
+    marks.downweightLowestCount = toCount(draft.downweightLowestCount, DEFAULT_DOWNWEIGHT_COUNT);
+    marks.downweightPercent = toPercent(draft.downweightPercent, DEFAULT_DOWNWEIGHT_PERCENT);
+  }
+
+  return {
+    ...marks,
+    fullCreditGrade: draft.fullCredit ? toPercent(draft.fullCreditGrade, PERCENT_MAX) : null,
+    isBonus: draft.isBonus,
+  };
+}
+
+// --- Mark arithmetic --------------------------------------------------------
 
 /** A single item's score as a percentage, used only for ranking. */
 export const percentageOf = (pair: MarkPair): number => (pair.achieved / pair.full) * 100;

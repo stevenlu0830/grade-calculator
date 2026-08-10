@@ -7,6 +7,7 @@ import { calculateBreakdownGrade, calculateWeightedValue } from '@/lib/gradeCalc
 import { formatGrade } from '@/lib/gradeFormatting';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/NumberInput';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -77,6 +78,13 @@ export function BreakdownCard({
                   aria-label="Breakdown weight"
                 />
                 <span className="text-sm text-muted-foreground">%</span>
+                {/* Shown in the header because it changes what that weight
+                    means — the advanced options are a click away and collapsed. */}
+                {breakdown.isBonus && (
+                  <Badge variant="secondary" className="font-normal">
+                    Bonus
+                  </Badge>
+                )}
               </div>
               <GradeDisplay grade={grade} size="md" />
               <div className="flex items-center gap-1 min-w-[60px]">

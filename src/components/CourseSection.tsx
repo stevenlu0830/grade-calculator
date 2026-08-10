@@ -3,7 +3,12 @@ import { Breakdown, Course, SubBreakdown } from '@/types/grades';
 import { BreakdownCard } from './BreakdownCard';
 import { GradeDisplay } from './GradeDisplay';
 import { AddBreakdownDialog } from './AddBreakdownDialog';
-import { areWeightsValid, calculateCourseGrade, getTotalWeight } from '@/lib/gradeCalculations';
+import {
+  areWeightsValid,
+  calculateCourseGrade,
+  getBonusWeight,
+  getTotalWeight,
+} from '@/lib/gradeCalculations';
 import { formatWeight } from '@/lib/gradeFormatting';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -41,6 +46,7 @@ export function CourseSection({
 }: CourseSectionProps) {
   const [addOpen, setAddOpen] = useState(false);
   const totalWeight = getTotalWeight(course.breakdowns);
+  const bonusWeight = getBonusWeight(course.breakdowns);
   const weightsAreValid = areWeightsValid(course.breakdowns);
   const courseGrade = weightsAreValid ? calculateCourseGrade(course.breakdowns) : null;
   const showWeightWarning = course.breakdowns.length > 0 && !weightsAreValid;
@@ -93,6 +99,14 @@ export function CourseSection({
               Breakdown weights total {formatWeight(totalWeight)}%. They should sum to 100%.
             </AlertDescription>
           </Alert>
+        )}
+
+        {/* Says where the missing weight went, so a course that adds up to 100
+            without its bonus breakdowns doesn't look like it's short. */}
+        {bonusWeight > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Bonus breakdowns add up to {formatWeight(bonusWeight)}% on top of the 100%.
+          </p>
         )}
 
         {course.breakdowns.length === 0 ? (

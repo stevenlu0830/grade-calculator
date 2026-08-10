@@ -14,6 +14,7 @@ describe('BREAKDOWN_PRESETS', () => {
       'In-class Exercises',
       'Labs',
       'Midterms',
+      'Participation',
       'Project Phases',
       'Quizzes',
       'Tests',
@@ -44,6 +45,8 @@ describe('BREAKDOWN_PRESETS', () => {
 
   it('leaves an already-singular label alone', () => {
     expect(presetFor('Final Exam').singular).toBe('Final Exam');
+    // A mass noun: "Participation 1" is the sensible auto-name, not "Participation".
+    expect(presetFor('Participation').singular).toBe('Participation');
   });
 });
 

@@ -124,6 +124,10 @@ export function calculateWeightedValue(breakdown: Breakdown): number | null {
  * Breakdowns without a grade or without a weight are skipped, and the result is
  * `null` if none qualify. This does not check that the weights add up — callers
  * gate on `areWeightsValid` first.
+ *
+ * Bonus breakdowns are summed here like any other, which is exactly what makes
+ * them bonus: they add their points on top of a course whose other weights
+ * already total 100.
  */
 export function calculateCourseGrade(breakdowns: Breakdown[]): number | null {
   let total = 0;
@@ -140,9 +144,20 @@ export function calculateCourseGrade(breakdowns: Breakdown[]): number | null {
   return hasAnyGrade ? total : null;
 }
 
-/** Sum of the breakdown weights, counting an unset weight as zero. */
+/**
+ * Sum of the breakdown weights, counting an unset weight as zero.
+ *
+ * Bonus breakdowns are left out: their weight is extra credit on top of the
+ * course, so counting it here would make a correctly-weighted course look like
+ * it added up to more than 100.
+ */
 export function getTotalWeight(breakdowns: Breakdown[]): number {
-  return breakdowns.reduce((sum, b) => sum + (b.weight || 0), 0);
+  return breakdowns.reduce((sum, b) => sum + (b.isBonus ? 0 : b.weight || 0), 0);
+}
+
+/** Sum of the bonus weights — the extra credit available on top of the 100%. */
+export function getBonusWeight(breakdowns: Breakdown[]): number {
+  return breakdowns.reduce((sum, b) => sum + (b.isBonus ? b.weight || 0 : 0), 0);
 }
 
 /**

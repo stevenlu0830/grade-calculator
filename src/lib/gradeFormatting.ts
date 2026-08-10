@@ -23,6 +23,10 @@ export const DISPLAY_DECIMALS = 2;
 /**
  * The UBC letter scale, highest band first. Deliberately distinct from the
  * colour bands below — an 82 reads "good" but grades as an A-.
+ *
+ * The bands are read against the *official* grade — the percentage rounded to a
+ * whole number — because that's the mark a course is recorded with. An 84.6
+ * therefore grades as an A, not an A-.
  */
 const LETTER_SCALE = [
   { min: 90, letter: 'A+' },
@@ -59,6 +63,24 @@ const bandFor = (grade: number | null) => {
 export function formatGrade(grade: number | null): string {
   if (grade === null) return NO_GRADE;
   return grade.toFixed(DISPLAY_DECIMALS);
+}
+
+/**
+ * The grade a course is officially recorded with: the calculated percentage
+ * rounded to a whole number, half up.
+ *
+ * The letter scale is read against this rather than the exact percentage, so an
+ * 84.6 is an A. Both figures are shown side by side — the exact one explains
+ * where the official one came from.
+ */
+export function toOfficialGrade(grade: number | null): number | null {
+  return grade === null ? null : Math.round(grade);
+}
+
+/** The official grade as a whole number, or an em dash if unentered. */
+export function formatOfficialGrade(grade: number | null): string {
+  const official = toOfficialGrade(grade);
+  return official === null ? NO_GRADE : official.toFixed(0);
 }
 
 /**

@@ -20,9 +20,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NumberInput } from '@/components/NumberInput';
 import { AdvancedOptions } from '@/components/AdvancedOptions';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { BREAKDOWN_PRESETS, OTHER_BREAKDOWN, presetFor } from '@/lib/breakdownPresets';
-import { GradingPolicy, NO_POLICY, describePolicy } from '@/lib/gradePolicies';
-import { ChevronDown, Settings2 } from 'lucide-react';
+import {
+  NO_POLICY_DRAFT,
+  PolicyDraft,
+  describeDraftErrors,
+  describePolicy,
+  policyDraftErrors,
+  policyFromDraft,
+} from '@/lib/gradePolicies';
+import { AlertTriangle, ChevronDown, Settings2 } from 'lucide-react';
 import type { NewBreakdown } from '@/hooks/useGradeStore';
 
 interface AddBreakdownDialogProps {
@@ -36,14 +44,20 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
   const [choice, setChoice] = useState('');
   const [customName, setCustomName] = useState('');
   const [weight, setWeight] = useState('');
-  const [policy, setPolicy] = useState<GradingPolicy>(NO_POLICY);
+  const [draft, setDraft] = useState<PolicyDraft>(NO_POLICY_DRAFT);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isOther = choice === OTHER_BREAKDOWN;
   const name = isOther ? customName.trim() : choice;
   const parsedWeight = weight === '' ? null : parseFloat(weight);
   const canAdd = name !== '' && parsedWeight !== null && !Number.isNaN(parsedWeight);
-  const activePolicy = describePolicy(policy);
+  const activePolicy = describePolicy(policyFromDraft(draft));
+
+  const handlePolicyChange = (next: PolicyDraft) => {
+    setDraft(next);
+    setError(null);
+  };
 
   const close = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -51,20 +65,31 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
       setChoice('');
       setCustomName('');
       setWeight('');
-      setPolicy(NO_POLICY);
+      setDraft(NO_POLICY_DRAFT);
       setAdvancedOpen(false);
+      setError(null);
     }
   };
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!canAdd) return;
+
+    // Same rule as the advanced options dialog: an option that's switched on
+    // must have a number in its box before it can be committed.
+    const blank = describeDraftErrors(policyDraftErrors(draft));
+    if (blank) {
+      setAdvancedOpen(true); // Nothing to fix if the section it's in is collapsed.
+      setError(blank);
+      return;
+    }
+
     // A custom name is its own singular; presets carry an explicit one.
     onAdd({
       name,
       weight: parsedWeight,
       subBreakdownLabel: presetFor(name).singular,
-      ...policy,
+      ...policyFromDraft(draft),
     });
     close(false);
   };
@@ -148,9 +173,16 @@ export function AddBreakdownDialog({ open, onOpenChange, onAdd }: AddBreakdownDi
               )}
             </div>
             <CollapsibleContent className="pt-3">
-              <AdvancedOptions policy={policy} onChange={setPolicy} />
+              <AdvancedOptions draft={draft} onChange={handlePolicyChange} />
             </CollapsibleContent>
           </Collapsible>
+
+          {error && (
+            <Alert variant="destructive" className="bg-warning/10 border-warning">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              <AlertDescription className="text-sm text-foreground">{error}</AlertDescription>
+            </Alert>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => close(false)}>

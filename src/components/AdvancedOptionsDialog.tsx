@@ -7,9 +7,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { AdvancedOptions } from '@/components/AdvancedOptions';
-import { GradingPolicy } from '@/lib/gradePolicies';
+import {
+  GradingPolicy,
+  PolicyDraft,
+  describeDraftErrors,
+  policyDraftErrors,
+  policyFromDraft,
+  toPolicyDraft,
+} from '@/lib/gradePolicies';
+import { AlertTriangle } from 'lucide-react';
 
 interface AdvancedOptionsDialogProps {
   open: boolean;
@@ -39,6 +48,7 @@ export function AdvancedOptionsDialog({
           <DialogDescription>
             Optional rules for this breakdown. Drop Lowest and Downweight are mutually exclusive;
             Full Credit combines with either, scaling the result so that percentage earns 100%.
+            Bonus makes the whole breakdown extra credit.
           </DialogDescription>
         </DialogHeader>
 
@@ -72,18 +82,42 @@ interface AdvancedOptionsFormProps {
 }
 
 function AdvancedOptionsForm({ initialPolicy, onApply, onCancel }: AdvancedOptionsFormProps) {
-  const [draft, setDraft] = useState<GradingPolicy>(initialPolicy);
+  const [draft, setDraft] = useState<PolicyDraft>(() => toPolicyDraft(initialPolicy));
+  const [error, setError] = useState<string | null>(null);
+
+  const handleChange = (next: PolicyDraft) => {
+    setDraft(next);
+    // The complaint is about the boxes as they were; typing makes it stale.
+    setError(null);
+  };
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    onApply(draft);
+
+    // An empty box is fine while editing but never on the way out — applying it
+    // would have to invent a number, and guessing at a grading rule is worse
+    // than saying no.
+    const blank = describeDraftErrors(policyDraftErrors(draft));
+    if (blank) {
+      setError(blank);
+      return;
+    }
+
+    onApply(policyFromDraft(draft));
     onCancel();
   };
 
   return (
     // A form so Return applies.
     <form onSubmit={submit} className="space-y-4">
-      <AdvancedOptions policy={draft} onChange={setDraft} />
+      <AdvancedOptions draft={draft} onChange={handleChange} />
+
+      {error && (
+        <Alert variant="destructive" className="bg-warning/10 border-warning">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <AlertDescription className="text-sm text-foreground">{error}</AlertDescription>
+        </Alert>
+      )}
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
