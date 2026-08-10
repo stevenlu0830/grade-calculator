@@ -1,19 +1,32 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { User } from '@supabase/supabase-js';
+import { FullPageLoader } from '@/components/FullPageLoader';
 import { useGradeStore } from '@/hooks/useGradeStore';
+import { useLocalDataImport } from '@/hooks/useLocalDataImport';
 import { useProgressFile } from '@/hooks/useProgressFile';
+import { AccountMenu } from '@/components/AccountMenu';
 import { CourseSection } from '@/components/CourseSection';
 import { CourseToolbar } from '@/components/CourseToolbar';
+import { ImportLocalDataDialog } from '@/components/ImportLocalDataDialog';
 import { NewCourseDialog } from '@/components/NewCourseDialog';
 import { AddSemesterDialog } from '@/components/AddSemesterDialog';
 import { SemesterPanel } from '@/components/SemesterPanel';
 import { Button } from '@/components/ui/button';
+import { CourseStorage } from '@/lib/courseStorage';
 import { DISPLAY_DECIMALS } from '@/lib/gradeFormatting';
 import { PROGRESS_FILE_ACCEPT } from '@/lib/progressFile';
 import { coursesIn, semesterLabel, visibleSemesters } from '@/lib/semesters';
-import { GraduationCap, Plus } from 'lucide-react';
+import { plural } from '@/lib/utils';
+import { GraduationCap, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
-const Index = () => {
+interface IndexProps {
+  /** The signed-in user's storage. Built once per user by `useAccountStorage`. */
+  storage: CourseStorage;
+  user: User;
+}
+
+const Index = ({ storage, user }: IndexProps) => {
   const [newCourseOpen, setNewCourseOpen] = useState(false);
   const [newSemesterOpen, setNewSemesterOpen] = useState(false);
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
@@ -21,6 +34,9 @@ const Index = () => {
   const {
     courses,
     semesters: savedSemesters,
+    isLoading,
+    loadError,
+    saveError,
     addSemester,
     deleteSemester,
     addCourse,
@@ -33,7 +49,30 @@ const Index = () => {
     deleteSubBreakdown,
     updateSubBreakdown,
     importData,
-  } = useGradeStore();
+  } = useGradeStore(storage);
+
+  const { candidate: localData, dismiss: dismissImport } = useLocalDataImport(
+    user.id,
+    !isLoading && !loadError,
+    courses.length === 0 && savedSemesters.length === 0
+  );
+
+  // A failed save is the one problem the student can't see for themselves: the
+  // UI still shows their edit, it just isn't anywhere yet.
+  useEffect(() => {
+    if (!saveError) return;
+    toast.error('Your changes aren’t saving', {
+      description: saveError.message,
+    });
+  }, [saveError]);
+
+  const handleImportLocalData = () => {
+    if (localData) {
+      importData(localData);
+      toast.success(`Imported ${plural(localData.courses.length, 'course')} into your account`);
+    }
+    dismissImport();
+  };
 
   const { inputRef, saveProgress, reloadProgress, handleFileChange } = useProgressFile(
     courses,
@@ -87,6 +126,30 @@ const Index = () => {
     addCourse(name, activeSemester);
   };
 
+  if (isLoading) return <FullPageLoader label="Loading your courses…" />;
+
+  // Editing on top of a failed read would mean saving an empty tree over
+  // whatever the account actually holds, so the app stops here instead.
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4 text-center">
+        <div className="rounded-2xl bg-muted p-4">
+          <GraduationCap className="h-10 w-10 text-muted-foreground" />
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">Couldn’t load your courses</h2>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Your saved data is safe — this device just couldn’t reach it. {loadError.message}
+          </p>
+        </div>
+        <Button onClick={() => window.location.reload()}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <input
@@ -111,6 +174,13 @@ const Index = () => {
         onAdd={handleAddSemester}
       />
 
+      <ImportLocalDataDialog
+        open={localData !== null}
+        courseCount={localData?.courses.length ?? 0}
+        onImport={handleImportLocalData}
+        onDecline={dismissImport}
+      />
+
       <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="container max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -123,11 +193,14 @@ const Index = () => {
                 <p className="text-sm text-muted-foreground"></p>
               </div>
             </div>
-            <CourseToolbar
-              onReloadClick={reloadProgress}
-              onSaveClick={saveProgress}
-              onAddCourse={openNewCourse}
-            />
+            <div className="flex items-center gap-2">
+              <CourseToolbar
+                onReloadClick={reloadProgress}
+                onSaveClick={saveProgress}
+                onAddCourse={openNewCourse}
+              />
+              <AccountMenu email={user.email ?? 'your account'} />
+            </div>
           </div>
 
           {/* Grades are computed at full precision and rounded only here, so a

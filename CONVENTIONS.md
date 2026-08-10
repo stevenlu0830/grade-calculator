@@ -27,7 +27,10 @@
 - Every store action is wrapped in `useCallback` with `[]` deps (uses functional `setCourses(prev => ...)`).
 - `null` means "not set" for all numeric fields. Never use `0` or `undefined` as the empty value.
 - Nullable reads use `??`, not `||`, so a real `0` survives: `breakdown.weight ?? ''`.
-- Persistence is implicit — the store's `useEffect` autosaves. Never write `localStorage` from a component.
+- Persistence is implicit — the store's `useEffect` autosaves. Never write storage from a component.
+- **Anything passed to `useGradeStore` as `storage` must be identity-stable.** It's an effect dependency; a fresh object per render reloads in a loop. Build it in a ref (`useAccountStorage`) or hoist it to a module constant — `useMemo` is a hint, not a guarantee.
+- **Storage is async, and failures are not decoration.** `localCourseStorage` swallows errors because private-mode and quota are expected; a network backend must **throw** instead, so the store can refuse to save over data it couldn't read. Never make a failed read look like an empty account.
+- Anything that costs a round trip goes through `debouncedStorage`. Don't debounce inside a component.
 
 ## Layering
 
@@ -40,7 +43,9 @@ pages / components  →  hooks  →  lib  →  types
 - `src/lib/*` never imports React. If a helper needs a hook, it belongs in `src/hooks/`.
 - **Domain** (`gradeCalculations`, `gradePolicies`) must not know about Tailwind, the DOM, or display strings.
 - **Presentation** (`gradeFormatting`) may import domain. Never the reverse.
-- Side effects live at the edges: `courseStorage` owns `localStorage`, `download` owns the DOM. Nothing else touches either.
+- Side effects live at the edges: `courseStorage` owns `localStorage`, `download` owns the DOM, `supabase.ts` owns the client and is the **only** reader of `import.meta.env`. Nothing else touches any of them.
+- `lib/` may not add window/document listeners. A `pagehide` flush belongs in a hook (`useAccountStorage`), not in the storage decorator it flushes.
+- Auth calls go through `src/lib/auth.ts`, never `supabase.auth.*` from a component — same rule as the store.
 - Split every export into a pure builder plus a thin effectful wrapper (`buildCoursesCsv` / `exportToCSV`). Assert the builder in tests; keep the wrapper too small to break.
 
 ## Grade logic
@@ -104,6 +109,8 @@ The domain is Course → **Breakdown** → **Sub-breakdown**. Use those words in
 - Vitest + jsdom, globals enabled; the existing files import `describe`/`it`/`expect` explicitly — match that.
 - **All tests live in `src/test/`**, named `<module>.test.ts` after the module under test. Never colocate beside source.
 - Tests import through the `@/` alias (`@/lib/progressFile`), never with relative paths.
+- Hook tests build their storage **outside** the `renderHook` callback, then `await settle()` for the initial load. Inline construction reloads in a loop.
+- No `waitFor` — it comes from `@testing-library/dom` and reads better, but the local `settle()` (drain microtasks inside `act`) is what the existing tests use. Stay consistent.
 - Test the pure functions; that's what the pure/effectful split is for. Components are currently untested.
 - Changing behaviour deliberately? Update the test in the same commit and say why in the message. A characterization test that starts failing is either a regression or a decision — never noise to silence.
 

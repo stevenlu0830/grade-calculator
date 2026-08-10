@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Course, Breakdown, GradeData, SubBreakdown } from '@/types/grades';
-import { CourseStorage, localCourseStorage } from '@/lib/courseStorage';
+import { CourseStorage, EMPTY_GRADE_DATA, localCourseStorage } from '@/lib/courseStorage';
 import { nextSubBreakdownName } from '@/lib/breakdownPresets';
 import { GradingPolicy } from '@/lib/gradePolicies';
 import { UNASSIGNED_SEMESTER, persistedSemesters } from '@/lib/semesters';
@@ -68,21 +68,96 @@ const normalize = (data: GradeData): GradeData => ({
   semesters: persistedSemesters(data.courses, data.semesters),
 });
 
+const asError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
+
 /**
  * The single source of truth for course data.
  *
  * Call this once, at the top of the tree, and pass its actions down: a second
  * instance would be an independent state tree racing the first over the same
  * storage key.
+ *
+ * `storage` must keep a stable identity across renders — it's an effect
+ * dependency, so a fresh object every render would reload in a loop. Build it
+ * with `useAccountStorage`, or hoist it to a module constant.
  */
 export function useGradeStore(storage: CourseStorage = localCourseStorage) {
-  const [data, setData] = useState<GradeData>(() => normalize(storage.load()));
+  // Starts empty and is replaced by the load below. Nothing renders the courses
+  // while `isLoading` holds, so the placeholder is never mistaken for "no
+  // courses yet".
+  const [data, setData] = useState<GradeData>(EMPTY_GRADE_DATA);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [saveError, setSaveError] = useState<Error | null>(null);
   const { courses, semesters } = data;
+
+  /**
+   * The exact object storage last handed over or accepted.
+   *
+   * Compared by reference: every action builds a new object, so anything that
+   * isn't this one is a genuine edit. Without it, finishing a load would
+   * immediately push identical data straight back over the network.
+   */
+  const persisted = useRef<GradeData | null>(null);
+
+  /**
+   * Mirrors `saveError` so the happy path can skip the setter entirely.
+   *
+   * A save resolving would otherwise schedule a state update after every single
+   * edit just to write `null` over `null`.
+   */
+  const lastSaveError = useRef<Error | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+    persisted.current = null;
+
+    storage.load().then(
+      loaded => {
+        if (cancelled) return; // A newer storage took over mid-flight.
+        const next = normalize(loaded);
+        persisted.current = next;
+        setData(next);
+        setIsLoading(false);
+      },
+      error => {
+        if (cancelled) return;
+        console.error('Failed to load saved data:', error);
+        setLoadError(asError(error));
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storage]);
 
   // Autosave: no component ever writes to storage itself.
   useEffect(() => {
-    storage.save(data);
-  }, [data, storage]);
+    if (isLoading) return;
+    // A read that failed leaves `data` empty while the account may hold plenty.
+    // Saving on top of that would turn a network blip into data loss.
+    if (loadError) return;
+    if (data === persisted.current) return;
+
+    persisted.current = data;
+    storage.save(data).then(
+      () => {
+        if (lastSaveError.current === null) return;
+        lastSaveError.current = null;
+        setSaveError(null);
+      },
+      error => {
+        console.error('Failed to save data:', error);
+        lastSaveError.current = asError(error);
+        setSaveError(lastSaveError.current);
+      }
+    );
+  }, [data, storage, isLoading, loadError]);
 
   /** Course actions all edit the same slice; semesters ride along untouched. */
   const setCourses = useCallback((update: (courses: Course[]) => Course[]) => {
@@ -226,6 +301,9 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
   return {
     courses,
     semesters,
+    isLoading,
+    loadError,
+    saveError,
     addSemester,
     deleteSemester,
     addCourse,

@@ -5,18 +5,60 @@ import { CourseStorage } from '@/lib/courseStorage';
 import { advancedOptionUpdate, NO_POLICY } from '@/lib/gradePolicies';
 import { useGradeStore, NewBreakdown } from '@/hooks/useGradeStore';
 
+interface MemoryStorage extends CourseStorage {
+  saved: GradeData;
+  /** How many times `save` has been called, to catch redundant writes. */
+  writes: number;
+}
+
 /** In-memory storage, so the store can be driven without a browser. */
-const memoryStorage = (
-  initial: Partial<GradeData> = {}
-): CourseStorage & { saved: GradeData } => {
-  const box = {
+const memoryStorage = (initial: Partial<GradeData> = {}): MemoryStorage => {
+  const box: MemoryStorage = {
     saved: { courses: initial.courses ?? [], semesters: initial.semesters ?? [] },
-    load: () => box.saved,
-    save: (data: GradeData) => {
+    writes: 0,
+    load: async () => box.saved,
+    save: async (data: GradeData) => {
+      box.writes += 1;
       box.saved = data;
     },
   };
   return box;
+};
+
+/** Storage whose read always fails, for the "don't overwrite what you couldn't read" path. */
+const failingStorage = (message = 'network down'): MemoryStorage => {
+  const box = memoryStorage();
+  box.load = async () => {
+    throw new Error(message);
+  };
+  return box;
+};
+
+/**
+ * Lets pending promises settle and React apply what they scheduled.
+ *
+ * `waitFor` would read better, but it comes from `@testing-library/dom`, which
+ * this project doesn't have installed. Every promise here is already resolved,
+ * so draining the microtask queue inside `act` is enough.
+ */
+const settle = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+/**
+ * Renders the store over a *stable* storage and waits for the initial load.
+ *
+ * The storage is built once, outside the render callback: it's an effect
+ * dependency, so building it inline would hand the store a new object every
+ * render and reload in a loop.
+ */
+const renderStore = async (storage: MemoryStorage = memoryStorage()) => {
+  const view = renderHook(() => useGradeStore(storage));
+  await settle();
+  expect(view.result.current.isLoading).toBe(false);
+  return { result: view.result, storage, unmount: view.unmount };
 };
 
 const newBreakdown = (overrides: Partial<NewBreakdown> = {}): NewBreakdown => ({
@@ -28,8 +70,8 @@ const newBreakdown = (overrides: Partial<NewBreakdown> = {}): NewBreakdown => ({
 });
 
 describe('addBreakdown', () => {
-  it('creates a breakdown with one auto-named, blank sub-breakdown', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('creates a breakdown with one auto-named, blank sub-breakdown', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -42,8 +84,8 @@ describe('addBreakdown', () => {
     ]);
   });
 
-  it('defaults to no grading policy', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('defaults to no grading policy', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -53,8 +95,8 @@ describe('addBreakdown', () => {
   });
 
   // The add dialog can set a policy up front; it must survive into the store.
-  it('carries a drop-lowest policy set at creation', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('carries a drop-lowest policy set at creation', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -72,8 +114,8 @@ describe('addBreakdown', () => {
     });
   });
 
-  it('carries a downweight policy set at creation', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('carries a downweight policy set at creation', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -91,8 +133,8 @@ describe('addBreakdown', () => {
 
 describe('updateBreakdown', () => {
   // What the advanced options dialog does on Apply.
-  it('applies a whole policy over the existing one', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('applies a whole policy over the existing one', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -113,8 +155,8 @@ describe('updateBreakdown', () => {
     });
   });
 
-  it('clears both policies for none', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('clears both policies for none', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -130,8 +172,8 @@ describe('updateBreakdown', () => {
 });
 
 describe('marks are stored verbatim', () => {
-  it('keeps a score above full marks', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('keeps a score above full marks', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -152,8 +194,8 @@ describe('marks are stored verbatim', () => {
     });
   });
 
-  it('does not rewrite the score when full marks are lowered', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('does not rewrite the score when full marks are lowered', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -177,8 +219,8 @@ describe('marks are stored verbatim', () => {
 });
 
 describe('sub-breakdown auto-naming', () => {
-  it('continues the counter', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('continues the counter', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -195,8 +237,8 @@ describe('sub-breakdown auto-naming', () => {
     ]);
   });
 
-  it('refuses to delete the last sub-breakdown', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('refuses to delete the last sub-breakdown', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
@@ -212,18 +254,16 @@ describe('sub-breakdown auto-naming', () => {
 });
 
 describe('persistence', () => {
-  it('loads through the injected storage and saves on change', () => {
-    const storage = memoryStorage();
-    const { result } = renderHook(() => useGradeStore(storage));
+  it('loads through the injected storage and saves on change', async () => {
+    const { result, storage } = await renderStore();
 
     act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
 
     expect(storage.saved.courses.map(c => c.name)).toEqual(['CPSC 121']);
   });
 
-  it('saves the semester list alongside the courses', () => {
-    const storage = memoryStorage();
-    const { result } = renderHook(() => useGradeStore(storage));
+  it('saves the semester list alongside the courses', async () => {
+    const { result, storage } = await renderStore();
 
     act(() => result.current.addSemester('2026 Winter Term 1'));
 
@@ -232,36 +272,109 @@ describe('persistence', () => {
     expect(storage.saved.courses).toEqual([]);
   });
 
-  it('adopts the semesters its courses name, for data saved before the list', () => {
+  it('adopts the semesters its courses name, for data saved before the list', async () => {
     const legacy = [
       { id: 'c', name: 'MATH 200', semester: '2025 Winter Term 2', breakdowns: [] },
     ];
-    const { result } = renderHook(() => useGradeStore(memoryStorage({ courses: legacy })));
+    const { result } = await renderStore(memoryStorage({ courses: legacy }));
 
     // Otherwise deleting that course would take the semester with it.
     expect(result.current.semesters).toEqual(['2025 Winter Term 2']);
   });
 
-  it('leaves the unassigned bucket off the list', () => {
+  it('leaves the unassigned bucket off the list', async () => {
     const legacy = [{ id: 'c', name: 'Old', semester: '', breakdowns: [] }];
-    const { result } = renderHook(() => useGradeStore(memoryStorage({ courses: legacy })));
+    const { result } = await renderStore(memoryStorage({ courses: legacy }));
 
     // It isn't a semester anyone created; it's where course-less courses land.
     expect(result.current.semesters).toEqual([]);
   });
+
+  // Against a network backend, echoing the load straight back would be a wasted
+  // round trip on every page open.
+  it('does not write the data it just loaded back to storage', async () => {
+    const courses = [{ id: 'c', name: 'MATH 200', semester: '2025 Winter Term 2', breakdowns: [] }];
+    const { storage } = await renderStore(memoryStorage({ courses }));
+
+    expect(storage.writes).toBe(0);
+  });
+
+  it('reports a load failure instead of showing an empty account', async () => {
+    const storage = failingStorage('offline');
+    const view = renderHook(() => useGradeStore(storage));
+    await settle();
+
+    expect(view.result.current.isLoading).toBe(false);
+    expect(view.result.current.loadError?.message).toBe('offline');
+    expect(view.result.current.courses).toEqual([]);
+  });
+
+  /**
+   * The dangerous case: a failed read leaves the store empty, so saving on top
+   * of it would replace a full account with nothing.
+   */
+  it('refuses to save after a failed load', async () => {
+    const storage = failingStorage();
+    const view = renderHook(() => useGradeStore(storage));
+    await settle();
+
+    act(() => view.result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
+    await settle();
+
+    expect(storage.writes).toBe(0);
+    expect(storage.saved.courses).toEqual([]);
+  });
+
+  it('surfaces a save failure', async () => {
+    const storage = memoryStorage();
+    storage.save = async () => {
+      throw new Error('write rejected');
+    };
+    const view = renderHook(() => useGradeStore(storage));
+    await settle();
+
+    act(() => view.result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
+    await settle();
+
+    expect(view.result.current.saveError?.message).toBe('write rejected');
+    // The edit stays on screen — it's unsaved, not undone.
+    expect(view.result.current.courses.map(c => c.name)).toEqual(['CPSC 121']);
+  });
+
+  it('reloads when the storage changes, so switching account swaps the data', async () => {
+    const first = memoryStorage({
+      courses: [{ id: 'a', name: 'CPSC 121', semester: '', breakdowns: [] }],
+    });
+    const second = memoryStorage({
+      courses: [{ id: 'b', name: 'MATH 100', semester: '', breakdowns: [] }],
+    });
+
+    const view = renderHook(({ storage }) => useGradeStore(storage), {
+      initialProps: { storage: first as CourseStorage },
+    });
+    await settle();
+    expect(view.result.current.courses.map(c => c.name)).toEqual(['CPSC 121']);
+
+    view.rerender({ storage: second as CourseStorage });
+    await settle();
+
+    expect(view.result.current.courses.map(c => c.name)).toEqual(['MATH 100']);
+    // The first account must not be written with the second's data.
+    expect(first.writes).toBe(0);
+  });
 });
 
 describe('semesters', () => {
-  it('keeps an added semester even with no courses in it', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('keeps an added semester even with no courses in it', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addSemester('2026 Winter Term 1'));
 
     expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
   });
 
-  it('does not add the same semester twice', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('does not add the same semester twice', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addSemester('2026 Winter Term 1'));
     act(() => result.current.addSemester('2026 Winter Term 1'));
@@ -269,16 +382,16 @@ describe('semesters', () => {
     expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
   });
 
-  it('records the semester a course is added to', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('records the semester a course is added to', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
 
     expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
   });
 
-  it('keeps a semester after its last course is deleted', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('keeps a semester after its last course is deleted', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
     act(() => result.current.deleteCourse(result.current.courses[0].id));
@@ -287,8 +400,8 @@ describe('semesters', () => {
     expect(result.current.semesters).toEqual(['2026 Winter Term 1']);
   });
 
-  it('deletes a semester along with every course in it', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('deletes a semester along with every course in it', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
     act(() => result.current.addCourse('MATH 100', '2026 Winter Term 1'));
@@ -300,9 +413,9 @@ describe('semesters', () => {
     expect(result.current.courses.map(c => c.name)).toEqual(['MATH 101']);
   });
 
-  it('deletes courses saved with no semester when the unassigned bucket goes', () => {
+  it('deletes courses saved with no semester when the unassigned bucket goes', async () => {
     const legacy = [{ id: 'c', name: 'Old', semester: '', breakdowns: [] }];
-    const { result } = renderHook(() => useGradeStore(memoryStorage({ courses: legacy })));
+    const { result } = await renderStore(memoryStorage({ courses: legacy }));
 
     act(() => result.current.deleteSemester(''));
 
@@ -311,8 +424,8 @@ describe('semesters', () => {
 });
 
 describe('importData', () => {
-  it('replaces courses and semesters together', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('replaces courses and semesters together', async () => {
+    const { result } = await renderStore();
 
     act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
     act(() =>
@@ -326,8 +439,8 @@ describe('importData', () => {
     expect(result.current.semesters).toEqual(['2025 Summer Term 1', '2025 Winter Term 1']);
   });
 
-  it('keeps the imported course order rather than sorting it', () => {
-    const { result } = renderHook(() => useGradeStore(memoryStorage()));
+  it('keeps the imported course order rather than sorting it', async () => {
+    const { result } = await renderStore();
     const course = (name: string): Course => ({
       id: `id-${name}`,
       name,

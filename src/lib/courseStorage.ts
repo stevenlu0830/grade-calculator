@@ -8,11 +8,19 @@ import { createId } from '@/lib/id';
  * The store depends on this interface rather than on `localStorage` directly,
  * so it can be exercised without a browser and swapped for a server-backed
  * implementation without touching state logic.
+ *
+ * Both operations are async because one implementation talks to Supabase over
+ * the network. `localCourseStorage` is still synchronous underneath and simply
+ * hands back settled promises — the cost of the wrapper is one microtask, and
+ * the alternative was two rival interfaces for the same job.
  */
 export interface CourseStorage {
-  load(): GradeData;
-  save(data: GradeData): void;
+  load(): Promise<GradeData>;
+  save(data: GradeData): Promise<void>;
 }
+
+/** Nothing saved. A fresh account and an unreadable one both start here. */
+export const EMPTY_GRADE_DATA: GradeData = { courses: [], semesters: [] };
 
 export const STORAGE_KEY = 'ubc-grade-calculator-data';
 
@@ -170,17 +178,11 @@ export function migrate(raw: unknown): GradeData {
  * and losing persistence should not take the app down with it.
  */
 export const localCourseStorage: CourseStorage = {
-  load(): GradeData {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return migrate(JSON.parse(saved));
-    } catch (error) {
-      console.error('Failed to load saved data:', error);
-    }
-    return { courses: [], semesters: [] };
+  async load(): Promise<GradeData> {
+    return readLocalData();
   },
 
-  save({ courses, semesters }: GradeData): void {
+  async save({ courses, semesters }: GradeData): Promise<void> {
     try {
       const payload: StoredData = { version: SCHEMA_VERSION, courses, semesters };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -189,3 +191,26 @@ export const localCourseStorage: CourseStorage = {
     }
   },
 };
+
+/**
+ * The browser's saved data, read synchronously.
+ *
+ * Separate from `localCourseStorage.load` because the sign-in flow asks "is
+ * there anything here worth importing?" as a plain question, and awaiting a
+ * promise to answer it would only obscure that this never touches the network.
+ */
+export function readLocalData(): GradeData {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return migrate(JSON.parse(saved));
+  } catch (error) {
+    console.error('Failed to load saved data:', error);
+  }
+  return EMPTY_GRADE_DATA;
+}
+
+/** Whether the browser holds data from before this app had accounts. */
+export function hasLocalData(): boolean {
+  const { courses, semesters } = readLocalData();
+  return courses.length > 0 || semesters.length > 0;
+}

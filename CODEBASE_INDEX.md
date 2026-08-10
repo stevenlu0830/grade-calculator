@@ -1,13 +1,15 @@
 # Codebase Index
 
 > Structural map of the UBC Grade Calculator. AI-optimized: paths + responsibilities, no prose.
-> **Stack:** Vite 8 + React 18 + TypeScript + Tailwind 3 + shadcn/ui. No backend, no auth, no network calls.
+> **Stack:** Vite 8 + React 18 + TypeScript + Tailwind 3 + shadcn/ui + Supabase (auth + storage).
 > **Vocabulary:** Semester → Course → **Breakdown** (weighted category) → **Sub-breakdown** (one graded item). "Component" now means *React component* only.
 
 ## Quick orientation
 
 | I want to... | Go to |
 |---|---|
+| Change sign-in, registration or the auth gate | [src/lib/auth.ts](src/lib/auth.ts), [src/components/AuthForm.tsx](src/components/AuthForm.tsx), [src/App.tsx](src/App.tsx) |
+| Change where account data is stored, or the SQL/RLS | [src/lib/supabaseCourseStorage.ts](src/lib/supabaseCourseStorage.ts), [supabase/migrations/0001_user_data.sql](supabase/migrations/0001_user_data.sql) |
 | Change semesters, terms or their ordering | [src/lib/semesters.ts](src/lib/semesters.ts) |
 | Change grade math (marks totals, weighting) | [src/lib/gradeCalculations.ts](src/lib/gradeCalculations.ts) |
 | Change a drop/downweight policy, or add one | [src/lib/gradePolicies.ts](src/lib/gradePolicies.ts) |
@@ -37,7 +39,10 @@ pages / components  →  hooks  →  lib (domain + format + io)  →  types
 
 - [index.html](index.html) — Vite shell; mounts `#root`. Declares the favicon **explicitly** (`/favicon.png?v=2`) rather than relying on the implicit `/favicon.ico` lookup, which cached hard enough to keep serving a stale icon. Bump the `?v=` when replacing the icon.
 - [src/main.tsx](src/main.tsx) — `createRoot(...).render(<App />)`; imports `index.css`.
-- [src/App.tsx](src/App.tsx) — providers `QueryClientProvider` → `TooltipProvider` → `Toaster` + `Sonner` → `BrowserRouter`. Routes: `/` → `Index`, `*` → `NotFound`.
+- [src/App.tsx](src/App.tsx) — providers `QueryClientProvider` → `TooltipProvider` → `Toaster` + `Sonner` → `BrowserRouter` → `AuthGate`.
+  - `AuthGate` picks one of four: `SupabaseSetupNotice` (no env), `FullPageLoader` (session loading), `Auth` (signed out), `SignedInApp`.
+  - `SignedInApp` is `key`ed on the user id so switching account remounts the tree — storage swaps on its own, but local UI state (selected semester) would otherwise carry across.
+  - `UserWorkspace` builds the storage via `useAccountStorage` and holds the routes: `/` → `Index`, `*` → `NotFound`.
   - `@tanstack/react-query` is mounted but **unused** — zero queries anywhere.
 
 ## Domain model — `src/types/grades.ts`
@@ -122,9 +127,28 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ⚠️ A course's final grade renders as `79.60 → 80 : A-` — exact, official, letter. The colour follows the official value too, so the letter and the colour can't disagree. Breakdown grades have no official value; only courses do.
 
+## Auth & accounts
+
+- [src/lib/supabase.ts](src/lib/supabase.ts) — the client singleton and the **only** place `import.meta.env` is read. `supabase` is `null` when unconfigured so importing can never throw; `isSupabaseConfigured` gates the gate, `requireSupabase()` throws with setup instructions. Exports `USER_DATA_TABLE`.
+- [src/lib/auth.ts](src/lib/auth.ts) — `signUpWithPassword` / `signInWithPassword` / `signOut`, plus two **pure** helpers: `validateCredentials(email, password, confirm?)` (a `confirm` of `undefined` means sign-in, so it isn't compared) and `describeAuthError(error)` (Supabase's terse strings → actionable ones; unknown messages pass through rather than being hidden). `MIN_PASSWORD_LENGTH = 6`, matching Supabase's own.
+  - `signUpWithPassword` returns `{ needsEmailConfirmation }` = "no session was issued". Supabase returns that same shape for an already-registered email, deliberately, so the form can't be used to enumerate accounts.
+- [src/hooks/useSession.ts](src/hooks/useSession.ts) — `getSession()` + `onAuthStateChange` subscription. `isLoading` covers the token-refresh window; rendering the login page during it would sign the student out on every reload.
+- [src/hooks/useAccountStorage.ts](src/hooks/useAccountStorage.ts) — `debouncedStorage(supabaseCourseStorage(userId))`, cached in a **ref** keyed on user id. A ref, not `useMemo`: only a ref guarantees the identity the store's effect depends on. Flushes pending writes on `pagehide` and on unmount.
+- [src/hooks/useLocalDataImport.ts](src/hooks/useLocalDataImport.ts) — offers pre-accounts `localStorage` data to an **empty** account, once per user (`importOfferKey(userId)`). Never merges, because it only fires when there's nothing to merge with.
+- [src/pages/Auth.tsx](src/pages/Auth.tsx) + [AuthForm.tsx](src/components/AuthForm.tsx) — sign in / register in one component with a mode toggle; the differing strings live in a `COPY` table. No success path of its own — the session change is what swaps the screen. Its one self-reported outcome is a registration awaiting an emailed link.
+- [AccountMenu.tsx](src/components/AccountMenu.tsx) — email + sign out, in the header.
+- [SupabaseSetupNotice.tsx](src/components/SupabaseSetupNotice.tsx) — the four setup steps, shown instead of the app when env vars are missing.
+
+⚠️ The anon key is public by design. **RLS on `user_data` is the only thing separating accounts** — see [supabase/migrations/0001_user_data.sql](supabase/migrations/0001_user_data.sql). Any new table needs its own policy in the same migration.
+
 ## State — `src/hooks/useGradeStore.ts`
 
-- `useState<GradeData>` + `useEffect` autosave through an injected `CourseStorage` (defaults to `localCourseStorage`). A local `setCourses(update)` helper edits just the course slice, so semesters ride along untouched.
+- `useState<GradeData>` starting at `EMPTY_GRADE_DATA`, replaced by an **async** `storage.load()` in an effect. Returns `isLoading`, `loadError`, `saveError` alongside the data and actions. A local `setCourses(update)` helper edits just the course slice, so semesters ride along untouched.
+- **Three guards make an async backend safe** (each has a test):
+  - `persisted` ref — the exact object storage last handed over; the save effect bails on reference equality, so a load isn't echoed straight back.
+  - `loadError` short-circuits the save effect entirely. The store is empty after a failed read, and writing that would wipe the account.
+  - `storage` is an effect dependency, so it **must** be identity-stable — build it with `useAccountStorage`.
+- `lastSaveError` ref mirrors `saveError` so a successful save skips the setter unless there was an error to clear (otherwise every edit schedules a pointless render, and tests warn about updates outside `act`).
 - **Not a Context.** Called once in `Index.tsx`; a second call would be a rival state tree racing the same key.
 - `mapCourse` / `mapBreakdown` helpers keep nested immutable updates flat.
 - Actions: `addSemester`, `deleteSemester`, `addCourse(name, semester)`, `deleteCourse`, `updateCourseName`, `addBreakdown(courseId, NewBreakdown)`, `deleteBreakdown`, `updateBreakdown`, `addSubBreakdown`, `deleteSubBreakdown`, `updateSubBreakdown`, `importData`.
@@ -134,7 +158,9 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ## Persistence & I/O seams
 
-- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface + `localCourseStorage`, both trading in `GradeData`. Key `ubc-grade-calculator-data`, stored as `{ version, courses, semesters }`. `SCHEMA_VERSION = 5`. `migrate(raw)` converts bare v1 `components`/`grade` data (defaulting `fullMarks` to `LEGACY_FULL_MARKS`), then `normalizeCourses` backfills fields added later — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, which a `!== null` check would otherwise read as *set*, and `isBonus` becomes `false`. Anything older than v5 has no semester list; the store rebuilds it from the courses.
+- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface (**async** `load`/`save`) + `localCourseStorage`, both trading in `GradeData`. Also `EMPTY_GRADE_DATA`, and `readLocalData()` / `hasLocalData()` — the synchronous reads the sign-in import offer asks its question with. Key `ubc-grade-calculator-data`, stored as `{ version, courses, semesters }`. `SCHEMA_VERSION = 5`.
+- [src/lib/supabaseCourseStorage.ts](src/lib/supabaseCourseStorage.ts) — `CourseStorage` over `public.user_data`. Pure `buildUserDataRow(userId, data)` / `parseUserDataRow(row)` split from the effectful `supabaseCourseStorage(userId, client?)`. Stores the **same envelope** `localStorage` does, so both share `migrate`. `maybeSingle()` on read (a new account has no row, which isn't an error); `upsert` on `user_id` for write. Errors **throw** rather than log — the store needs to know a read failed.
+- [src/lib/debouncedStorage.ts](src/lib/debouncedStorage.ts) — `debouncedStorage(inner, delayMs = 600)` decorator returning a `FlushableStorage` (`+ flush()`, `cancel()`). Coalesces a burst into one write of the newest data; every superseded `save`'s promise still settles with the write that replaced it. Reads pass straight through. Claims the pending write *before* awaiting, so a save arriving mid-flight queues a fresh timer instead of being dropped. `migrate(raw)` converts bare v1 `components`/`grade` data (defaulting `fullMarks` to `LEGACY_FULL_MARKS`), then `normalizeCourses` backfills fields added later — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, which a `!== null` check would otherwise read as *set*, and `isBonus` becomes `false`. Anything older than v5 has no semester list; the store rebuilds it from the courses.
 - [src/lib/download.ts](src/lib/download.ts) — `downloadBlob`. The **only** place the app hands a file to the browser.
 - [src/lib/id.ts](src/lib/id.ts) — `createId()`, `crypto.randomUUID()` with a fallback.
 - [src/lib/exportFormat.ts](src/lib/exportFormat.ts) — `timestampedFilename`.
@@ -181,7 +207,7 @@ Presentational; state arrives as props. None read the store.
 
 ## Pages & hooks
 
-- [src/pages/Index.tsx](src/pages/Index.tsx) (114) — owns the store, header, empty state, `NewCourseDialog`, and the horizontal snap carousel.
+- [src/pages/Index.tsx](src/pages/Index.tsx) — owns the store, header, empty state, `NewCourseDialog`, and the horizontal snap carousel. Takes `{ storage, user }` from the gate. Renders `FullPageLoader` while loading and a retry screen on `loadError` (editing on top of a failed read would save an empty tree over the account). Toasts `saveError`. Hosts `AccountMenu` and `ImportLocalDataDialog`.
 - [src/pages/NotFound.tsx](src/pages/NotFound.tsx) (24) — 404.
 - [src/hooks/useProgressFile.ts](src/hooks/useProgressFile.ts) — owns both **Save Progress** and **Reload Progress**: calls the local API, falls back on `ProgressApiUnavailableError`, and reports outcomes. Holds the hidden multi-file input used by the fallback.
 - [src/hooks/use-mobile.tsx](src/hooks/use-mobile.tsx) — 768px hook; used only by `ui/sidebar`.
@@ -201,7 +227,13 @@ shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 
-## Tests — `src/test/`, 346 across 10 files
+## Tests — `src/test/`, 378 across 13 files
+
+New: [auth](src/test/auth.test.ts) (`validateCredentials`, `describeAuthError`) · [supabaseCourseStorage](src/test/supabaseCourseStorage.test.ts) (row round trip, missing row, older schema, unreadable row) · [debouncedStorage](src/test/debouncedStorage.test.ts) (coalescing, waiter settlement, flush/cancel, mid-flight saves — uses fake timers).
+
+⚠️ `useGradeStore.test.ts` builds its storage **outside** the `renderHook` callback and awaits a `settle()` helper. Building it inline would hand the store a new object every render and reload in a loop. `settle()` drains microtasks inside `act` in place of `waitFor` — see below.
+
+⚠️ `@testing-library/dom` is a required peer of RTL 16 and was **missing**, so `useGradeStore.test.ts` couldn't be imported at all and its tests never ran. Now a devDependency.
 
 All tests live here, one file per module, importing via `@/lib/...`:
 [gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [progressFile](src/test/progressFile.test.ts) (save/reload round trip, bad input, older files) · [useGradeStore](src/test/useGradeStore.test.ts) (hook driven via `renderHook` with in-memory storage; semester lifecycle and import).
@@ -209,6 +241,8 @@ All tests live here, one file per module, importing via `@/lib/...`:
 
 ## Build & config
 
+- **Env** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` in `.env.local` (gitignored by `*.local`), typed in [src/vite-env.d.ts](src/vite-env.d.ts), template in [.env.example](.env.example). Read **only** by `src/lib/supabase.ts`. Vite reads env files at startup — restart after editing.
+- ⚠️ `npm i` fails `ERESOLVE` (`@vitejs/plugin-react-swc` peers `vite ≤7`, project runs vite 8). Use `npm i --legacy-peer-deps`.
 - [vite.config.ts](vite.config.ts) — port **8080**, registers `progressFilesPlugin()`, `open: true` (launches the OS default browser on `npm run dev`; `BROWSER=none` suppresses it), `@` → `./src`, `lovable-tagger` in dev only.
 - [vitest.config.ts](vitest.config.ts) — jsdom, globals on.
 - [.claude/launch.json](.claude/launch.json) — dev-server config for tooling.
