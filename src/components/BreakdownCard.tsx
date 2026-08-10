@@ -1,10 +1,12 @@
 import { Breakdown, SubBreakdown } from '@/types/grades';
 import { SubBreakdownRow } from './SubBreakdownRow';
 import { AdvancedOptionsDialog } from './AdvancedOptionsDialog';
+import { ConfirmDeleteDialog } from './ConfirmDeleteDialog';
 import { GradeDisplay } from './GradeDisplay';
 import { describePolicy } from '@/lib/gradePolicies';
 import { calculateBreakdownGrade, calculateWeightedValue } from '@/lib/gradeCalculations';
 import { formatGrade } from '@/lib/gradeFormatting';
+import { plural } from '@/lib/utils';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +35,7 @@ export function BreakdownCard({
 }: BreakdownCardProps) {
   const [isOpen, setIsOpen] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const grade = calculateBreakdownGrade(breakdown);
   const weightedValue = calculateWeightedValue(breakdown);
   const activePolicy = describePolicy(breakdown);
@@ -97,7 +100,8 @@ export function BreakdownCard({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                onClick={onDelete}
+                onClick={() => setConfirmDeleteOpen(true)}
+                aria-label="Delete breakdown"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -156,6 +160,20 @@ export function BreakdownCard({
           </CardContent>
         </CollapsibleContent>
       </Collapsible>
+
+      {/* Outside the collapsible: collapsing the card must not unmount an open
+          confirmation out from under the student. */}
+      <ConfirmDeleteDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title={`Delete ${breakdown.name.trim() || 'this breakdown'}?`}
+        description={`Deleting a breakdown also deletes everything under it — ${plural(
+          breakdown.subBreakdowns.length,
+          'sub-breakdown'
+        )} and every mark entered on them. This cannot be undone.`}
+        confirmLabel="Delete breakdown"
+        onConfirm={onDelete}
+      />
     </Card>
   );
 }

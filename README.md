@@ -26,7 +26,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Styling | Tailwind 3 + CSS variables | shadcn/ui `default` style, slate base |
 | Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | 335 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 346 tests in `src/test/`; React components untested |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template. `jspdf`/`jspdf-autotable` are now unused too, since PDF export was removed — still in `package.json`, no longer in the bundle.
 
@@ -117,9 +117,11 @@ Courses are grouped by semester, chosen from a year and one of UBC's four terms,
 Consequences:
 
 - **Courses saved before semesters existed** normalize to `''` and appear under **Unassigned**, sorted last, rather than vanishing from the panel. The unassigned bucket is never persisted to the list — it isn't a semester anyone created, so it disappears once nothing is in it.
-- **Deleting a semester deletes its courses.** `deleteSemester` drops the label *and* every course under it, which is why `DeleteSemesterDialog` names the count and says it can't be undone before anything happens.
+- **Deleting a semester deletes its courses.** `deleteSemester` drops the label *and* every course under it, which is why its confirmation names the count and says it can't be undone before anything happens.
 
 **Adding a course requires a selected semester** — the course has to belong to one. `New Course` reports "Add a semester first" rather than opening the dialog when none is selected. `addCourse` also records the semester on the list, so a semester loaded from a file that never named it explicitly still becomes anchored.
+
+**The panel abbreviates.** `shortSemesterLabel` renders `"2023 Winter Term 1"` as `2023W1`, because the full label was wide enough to be truncated to "2023 Winter Te…", which identified nothing. Hovering a row gives the full label and the course count back via a tooltip, and the button's `aria-label` carries it for screen readers. It is display-only — nothing parses it, nothing stores it, and every other surface (the delete confirmation, the empty state, the new-course dialog) shows the full label.
 
 ## 5. State & persistence
 
@@ -142,7 +144,7 @@ Consequences:
 - `importData` replaces courses *and* semesters wholesale; there is no merge path.
 - Every semester a course names is also on the semester list, applied on load and on import, so nothing visible is lost when a course is deleted.
 
-**No undo, no history.** `deleteCourse` is immediate and unrecoverable, and `deleteSemester` takes every course under it. That's why the semester delete is the one action here behind a confirmation dialog. Worth knowing before adding more destructive actions.
+**No undo, no history.** Every delete is immediate and unrecoverable, and they cascade — a semester takes its courses, a course takes its breakdowns, a breakdown takes its marks. That's why all four go through `ConfirmDeleteDialog` (§7), which is the only thing standing between a misclick and lost data. Keep that true for anything destructive you add.
 
 ## 6. Grade calculation
 
@@ -245,13 +247,15 @@ State flows down as props; mutations flow up as `on*` callbacks, with each level
 
 **Creation goes through dialogs.** `New Course` and `Add Breakdown` no longer create a blank row inline — each opens a centred modal and only commits on submit, with the confirm button disabled until the form is valid. Both wrap their fields in a `<form>` with a `type="submit"` button, so Return submits from any field. `AddBreakdownDialog` is rendered *inside* `CourseSection`, so each course owns its own instance and there's no question which course a submission belongs to. Its options come from `BREAKDOWN_PRESETS`; picking "Others (Specify)" reveals a free-text name field.
 
+**Deletion goes through one dialog.** Every trash button in the app — sub-breakdown, breakdown, course, semester — opens [ConfirmDeleteDialog](src/components/ConfirmDeleteDialog.tsx) rather than deleting on the click. It's deliberately dumb: no state, no domain knowledge, just a title, a description and a confirm label. The component that renders the trash owns the open flag, since that's what knows which row was clicked, and writes the description itself — a course names its breakdown count, a breakdown its sub-breakdown count, a semester its course count, and a sub-breakdown the marks about to be lost. Generic "are you sure?" copy would hide exactly the thing worth knowing, given there's no undo (§5).
+
 **Numeric inputs go through [NumberInput](src/components/NumberInput.tsx)**, never raw `<Input type="number">`. Browsers step a focused number input on wheel events, so scrolling the page over a field would silently rewrite a mark; `NumberInput` blurs on wheel instead, and `index.css` hides the spinner arrows. Use it for every new numeric field.
 
 Progress-file handling lives in [useProgressFile](src/hooks/useProgressFile.ts) — it owns the hidden `<input type="file">`, the read, the parse and the toasts, and is a hook rather than a button so the header and the empty state can both open the same picker.
 
 **Layout:** courses render in a horizontal scroll-snap carousel (`overflow-x-auto snap-x snap-mandatory`), each capped at `max-w-2xl`. This is a deliberate choice from commit `d3347fb`, not a wrapping grid.
 
-**AdvancedOptions** holds no rules of its own. It's a controlled field group over a `GradingPolicy` — the three policy fields, which a `Breakdown` satisfies structurally. It reads `getActiveAdvancedOption(policy)` for the current mode and calls `advancedOptionUpdate(option)` to switch, so "drop wins over downweight" and "enabling one clears the other" are defined once in `gradePolicies` and shared with the calculator. Each switch is disabled while the other is active, and `AdvancedOption` is never persisted.
+**AdvancedOptions** holds no rules of its own. It's a controlled field group over a `PolicyDraft`, whose committed form a `Breakdown` satisfies structurally. It reads `getActiveAdvancedOption(policy)` for the current mode and calls `advancedOptionUpdate(option)` to switch, so "drop wins over downweight" and "enabling one clears the other" are defined once in `gradePolicies` and shared with the calculator. Each switch is disabled while the other is active, and `AdvancedOption` is never persisted.
 
 Because it works on a bare policy, the same component serves two places:
 
@@ -313,12 +317,12 @@ The trade-off: **it only works while a Vite server is running.** A `npm run buil
 Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
-3. **No component test coverage.** `src/lib/*` and the store hook are well covered (335 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
+3. **No component test coverage.** `src/lib/*` and the store hook are well covered (346 tests); every React *component* is untested. The dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour, the blank-field rejection and the delete confirmations are all verified by hand only.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
 6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. 30 shadcn primitives are also unused, though those tree-shake.
 7. **A row worth 0 marks is silently ignored.** `fullMarks: 0` is representable; the calculator skips such rows rather than dividing by zero, but nothing tells the student why the row stopped counting. Same for a row whose full marks are still blank.
-8. **No undo, and no delete confirmation on courses or breakdowns.** Only deleting a *semester* asks first, because it takes every course under it (§4a).
+8. **No undo.** Deletes now confirm first (§7), but nothing can be brought back once confirmed. An undo stack, or a soft-delete with a "restore" toast, is the real fix.
 9. **Prop drilling.** `CourseSectionProps` takes 9 props and forwards 6 it never uses. Deliberately left as-is: at three levels it stays readable and keeps components trivially testable. Revisit if a fourth level appears.
 
 **Resolved along the way:** float-equality on weight totals; the misleading "totals 100.0%" warning; `exportImport.ts` doing three jobs at once; untestable export code; grading rules duplicated between the calculator and the toggle UI; `generateId`/clamp/weighted-value duplication; `(doc as any)`; the dead `App.css` / `NavLink.tsx` / `ui/use-toast.ts`; and the missing schema version, now handled by the versioned envelope and `migrate` (§5).
@@ -360,6 +364,8 @@ Ordered roughly by how likely each is to bite you.
 | Courses came back in the wrong order | The manifest is missing or predates the course, so it fell back to filename order (§8) | `orderCourses` in [progressFile.ts](src/lib/progressFile.ts) |
 | A course's weights total 100 but the grade shows `—` | One of them is marked Bonus, so it doesn't count towards the 100% (§6) | `getTotalWeight` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
 | Apply in Advanced options does nothing | A switched-on option has an empty box; the dialog says which (§7) | `policyDraftErrors` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
+| A trash button doesn't delete anything | By design — it opens a confirmation first (§7) | [ConfirmDeleteDialog.tsx](src/components/ConfirmDeleteDialog.tsx) |
+| A semester in the panel reads "2024S1" | The panel abbreviates; hover for the full label (§4a) | `shortSemesterLabel` in [semesters.ts](src/lib/semesters.ts) |
 | The letter grade disagrees with the percentage | Expected — the letter follows the *rounded* grade, e.g. 79.6 → 80 → A- (§6) | `toOfficialGrade` in [gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Old courses missing from the panel | They should be under **Unassigned**; check `migrate` backfilled `semester` to `''` | [courseStorage.ts](src/lib/courseStorage.ts) |
 | New Course does nothing | No semester selected — courses must belong to one (§4a) | `openNewCourse` in [Index.tsx](src/pages/Index.tsx) |

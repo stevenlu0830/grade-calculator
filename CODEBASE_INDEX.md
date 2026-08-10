@@ -96,6 +96,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - `semestersFromCourses` / `visibleSemesters(courses, semesters)` — the panel's list: the union of the saved list and whatever the courses name.
 - `persistedSemesters(courses, semesters)` — the same union **minus the unassigned bucket**, applied by the store on load and import. Data saved before the list existed heals into it instead of losing a semester when its last course goes.
 - `coursesIn` / `countCoursesIn` / `semesterLabel` — filtering and display; `''` renders as "Unassigned".
+- `shortSemesterLabel(semester)` — `"2023 Winter Term 1"` → `"2023W1"`, for the panel only, where the full label got truncated to "2023 Winter Te…". Display-only: nothing parses it back, and the tooltip hands the full label straight back on hover.
 - `semesterYearOptions(referenceYear)` — next year back through five, newest first. Takes the year so it stays pure.
 
 ⚠️ An empty semester survives a reload only because it's on the saved list — and in `progresses/`, only because of `_manifest.json`.
@@ -127,7 +128,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - **Not a Context.** Called once in `Index.tsx`; a second call would be a rival state tree racing the same key.
 - `mapCourse` / `mapBreakdown` helpers keep nested immutable updates flat.
 - Actions: `addSemester`, `deleteSemester`, `addCourse(name, semester)`, `deleteCourse`, `updateCourseName`, `addBreakdown(courseId, NewBreakdown)`, `deleteBreakdown`, `updateBreakdown`, `addSubBreakdown`, `deleteSubBreakdown`, `updateSubBreakdown`, `importData`.
-- `deleteSemester(label)` drops the label **and every course under it** — `DeleteSemesterDialog` is what stands between it and a misclick. `addCourse` records the semester on the list; `normalize` (via `persistedSemesters`) keeps the invariant on load and import.
+- `deleteSemester(label)` drops the label **and every course under it** — `ConfirmDeleteDialog`, opened by `SemesterPanel`, is what stands between it and a misclick. `addCourse` records the semester on the list; `normalize` (via `persistedSemesters`) keeps the invariant on load and import.
 - Exports the `NewBreakdown` input type — `{ name, weight, subBreakdownLabel }` **extending `GradingPolicy`**, so the add dialog can set a policy up front.
 - Invariants: a breakdown keeps ≥1 sub-breakdown; **marks are stored verbatim with no clamping**; new breakdowns seed one auto-named row with both mark fields blank.
 
@@ -169,9 +170,9 @@ Presentational; state arrives as props. None read the store.
 - [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) (80) — name, `achieved / full` mark inputs, and the row's own percentage.
 - [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) — four switches as a **controlled field group** over a `PolicyDraft`. Drop/downweight disable each other; Full Credit and Bonus Grade deliberately do not. **Stateless** — every box is raw text on the draft, so a field can be emptied and retyped; the parents reject blanks on submit. No help tooltips — they never worked and were removed. Used by both dialogs; holds no rules of its own.
 - [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) — modal wrapper with Cancel/Apply. Draft state lives in an inner component `key`ed on `open`, so it re-seeds on every open (see the comment there — two subtler approaches were both wrong). Apply refuses a draft with an empty box and shows which field.
-- [DeleteSemesterDialog.tsx](src/components/DeleteSemesterDialog.tsx) — the one confirmation in the app, because deleting a semester deletes every course under it. Names the count; open when its `semester` prop isn't `null`.
+- [ConfirmDeleteDialog.tsx](src/components/ConfirmDeleteDialog.tsx) — **every** delete goes through this: sub-breakdown, breakdown, course, semester. Stateless and domain-free — title, description, confirm label. The component owning the trash button owns the open flag and writes the description, so each one names what else is about to go.
 - [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx) (74) — prompts for a course name; Add disabled while blank.
-- [SemesterPanel.tsx](src/components/SemesterPanel.tsx) — left panel: Add Semester button plus the semester list with course counts; selecting one filters the course view. Each row is a container, not a single button, since the delete control is itself a button and buttons can't nest; it stays hidden until hover or focus.
+- [SemesterPanel.tsx](src/components/SemesterPanel.tsx) — left panel: Add Semester button plus the semester list with course counts; selecting one filters the course view. Rows show `shortSemesterLabel` with a tooltip carrying the full name and course count, and the same full name as `aria-label`. Each row is a container, not a single button, since the delete control is itself a button and buttons can't nest; it stays hidden until hover or focus. Owns the semester delete confirmation.
 - [AddSemesterDialog.tsx](src/components/AddSemesterDialog.tsx) — year and term dropdowns producing a semester label.
 - [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) — preset picker + "Others (Specify)" free text + weight + a collapsed advanced-options section, in a `<form>` so Return submits. Caps the dropdown with `max-h-56`.
 - [NumberInput.tsx](src/components/NumberInput.tsx) (26) — `<Input type="number">` that blurs on wheel so scrolling can't rewrite a mark. **Use this for every numeric field.**
@@ -185,7 +186,7 @@ Presentational; state arrives as props. None read the store.
 - [src/hooks/useProgressFile.ts](src/hooks/useProgressFile.ts) — owns both **Save Progress** and **Reload Progress**: calls the local API, falls back on `ProgressApiUnavailableError`, and reports outcomes. Holds the hidden multi-file input used by the fallback.
 - [src/hooks/use-mobile.tsx](src/hooks/use-mobile.tsx) — 768px hook; used only by `ui/sidebar`.
 - [src/hooks/use-toast.ts](src/hooks/use-toast.ts) — shadcn toast reducer; app code uses `sonner` instead.
-- [src/lib/utils.ts](src/lib/utils.ts) — `cn()` and `clamp(value, min, max)`.
+- [src/lib/utils.ts](src/lib/utils.ts) — `cn()`, `clamp(value, min, max)` and `plural(count, noun)` (`1 course` / `3 courses`, used by the delete dialogs and the progress toasts).
 
 ## UI kit — `src/components/ui/` (48 files)
 
@@ -200,11 +201,11 @@ shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 
-## Tests — `src/test/`, 335 across 9 files
+## Tests — `src/test/`, 346 across 10 files
 
 All tests live here, one file per module, importing via `@/lib/...`:
 [gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [progressFile](src/test/progressFile.test.ts) (save/reload round trip, bad input, older files) · [useGradeStore](src/test/useGradeStore.test.ts) (hook driven via `renderHook` with in-memory storage; semester lifecycle and import).
-[setup.ts](src/test/setup.ts) provides `jest-dom` + a `matchMedia` stub. Untested: React components (the store hook is now covered).
+[utils](src/test/utils.test.ts) covers `clamp` and `plural`. [setup.ts](src/test/setup.ts) provides `jest-dom` + a `matchMedia` stub. Untested: React components (the store hook is now covered).
 
 ## Build & config
 

@@ -110,6 +110,31 @@ export function semesterLabel(semester: string): string {
 }
 
 /**
+ * The compact form of each term. Spelled out rather than derived from the
+ * words, so a term whose name doesn't start with its season still gets a
+ * sensible abbreviation. A test keeps this exhaustive over `TERMS`.
+ */
+const TERM_ABBREVIATIONS: Record<Term, string> = {
+  'Winter Term 1': 'W1',
+  'Winter Term 2': 'W2',
+  'Summer Term 1': 'S1',
+  'Summer Term 2': 'S2',
+};
+
+/**
+ * `"2023 Winter Term 1"` → `"2023W1"`, for the semester panel, where the full
+ * label was wide enough to be truncated into uselessness ("2023 Winter Te…").
+ *
+ * Only ever a display shorthand — nothing parses it back, and the full label is
+ * what's stored and what every other surface shows. Anything that isn't a
+ * semester (the unassigned bucket, a hand-edited label) is left as it reads.
+ */
+export function shortSemesterLabel(semester: string): string {
+  const parsed = parseSemester(semester);
+  return parsed ? `${parsed.year}${TERM_ABBREVIATIONS[parsed.term]}` : semesterLabel(semester);
+}
+
+/**
  * Year choices for the dialog: a few back for finished courses, a couple ahead
  * for planning. Takes the reference year so it stays pure and testable.
  */

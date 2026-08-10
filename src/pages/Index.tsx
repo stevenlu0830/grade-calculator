@@ -5,12 +5,11 @@ import { CourseSection } from '@/components/CourseSection';
 import { CourseToolbar } from '@/components/CourseToolbar';
 import { NewCourseDialog } from '@/components/NewCourseDialog';
 import { AddSemesterDialog } from '@/components/AddSemesterDialog';
-import { DeleteSemesterDialog } from '@/components/DeleteSemesterDialog';
 import { SemesterPanel } from '@/components/SemesterPanel';
 import { Button } from '@/components/ui/button';
 import { DISPLAY_DECIMALS } from '@/lib/gradeFormatting';
 import { PROGRESS_FILE_ACCEPT } from '@/lib/progressFile';
-import { countCoursesIn, coursesIn, semesterLabel, visibleSemesters } from '@/lib/semesters';
+import { coursesIn, semesterLabel, visibleSemesters } from '@/lib/semesters';
 import { GraduationCap, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -18,8 +17,6 @@ const Index = () => {
   const [newCourseOpen, setNewCourseOpen] = useState(false);
   const [newSemesterOpen, setNewSemesterOpen] = useState(false);
   const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
-  /** The semester awaiting delete confirmation. */
-  const [semesterToDelete, setSemesterToDelete] = useState<string | null>(null);
 
   const {
     courses,
@@ -66,13 +63,12 @@ const Index = () => {
     setSelectedSemester(semester);
   };
 
-  const confirmDeleteSemester = () => {
-    if (semesterToDelete === null) return;
+  /** The panel has already confirmed by the time this runs. */
+  const handleDeleteSemester = (semester: string) => {
     // Whatever was selected may have just gone; `activeSemester` falls back to
     // the first one left on its own.
-    deleteSemester(semesterToDelete);
-    toast.success(`Deleted ${semesterLabel(semesterToDelete)}`);
-    setSemesterToDelete(null);
+    deleteSemester(semester);
+    toast.success(`Deleted ${semesterLabel(semester)}`);
   };
 
   const openNewCourse = () => {
@@ -115,13 +111,6 @@ const Index = () => {
         onAdd={handleAddSemester}
       />
 
-      <DeleteSemesterDialog
-        semester={semesterToDelete}
-        courseCount={semesterToDelete === null ? 0 : countCoursesIn(courses, semesterToDelete)}
-        onCancel={() => setSemesterToDelete(null)}
-        onConfirm={confirmDeleteSemester}
-      />
-
       <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="container max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -157,7 +146,7 @@ const Index = () => {
           courses={courses}
           onSelect={setSelectedSemester}
           onAddSemester={() => setNewSemesterOpen(true)}
-          onDeleteSemester={setSemesterToDelete}
+          onDeleteSemester={handleDeleteSemester}
         />
 
         <main className="flex-1 min-w-0 px-4 py-8">

@@ -3,6 +3,7 @@ import { Breakdown, Course, SubBreakdown } from '@/types/grades';
 import { BreakdownCard } from './BreakdownCard';
 import { GradeDisplay } from './GradeDisplay';
 import { AddBreakdownDialog } from './AddBreakdownDialog';
+import { ConfirmDeleteDialog } from './ConfirmDeleteDialog';
 import {
   areWeightsValid,
   calculateCourseGrade,
@@ -10,6 +11,7 @@ import {
   getTotalWeight,
 } from '@/lib/gradeCalculations';
 import { formatWeight } from '@/lib/gradeFormatting';
+import { plural } from '@/lib/utils';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -45,6 +47,7 @@ export function CourseSection({
   onUpdateSubBreakdown,
 }: CourseSectionProps) {
   const [addOpen, setAddOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const totalWeight = getTotalWeight(course.breakdowns);
   const bonusWeight = getBonusWeight(course.breakdowns);
   const weightsAreValid = areWeightsValid(course.breakdowns);
@@ -54,6 +57,22 @@ export function CourseSection({
   return (
     <Card className="border-border shadow-md overflow-hidden animate-fade-in">
       <AddBreakdownDialog open={addOpen} onOpenChange={setAddOpen} onAdd={onAddBreakdown} />
+
+      <ConfirmDeleteDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title={`Delete ${course.name.trim() || 'this course'}?`}
+        description={
+          course.breakdowns.length === 0
+            ? 'This course has no breakdowns in it. Deleting it cannot be undone.'
+            : `Deleting a course also deletes everything under it — ${plural(
+                course.breakdowns.length,
+                'breakdown'
+              )} and every mark entered on them. This cannot be undone.`
+        }
+        confirmLabel="Delete course"
+        onConfirm={onDelete}
+      />
 
       <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 border-b border-border">
         <div className="flex items-center justify-between gap-4">
@@ -83,7 +102,8 @@ export function CourseSection({
               variant="ghost"
               size="icon"
               className="h-10 w-10 text-muted-foreground hover:text-destructive"
-              onClick={onDelete}
+              onClick={() => setConfirmDeleteOpen(true)}
+              aria-label="Delete course"
             >
               <Trash2 className="h-5 w-5" />
             </Button>

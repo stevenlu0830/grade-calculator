@@ -8,10 +8,11 @@ import {
   coursesIn,
   formatSemester,
   parseSemester,
+  persistedSemesters,
   semesterLabel,
   semesterYearOptions,
-  persistedSemesters,
   semestersFromCourses,
+  shortSemesterLabel,
   visibleSemesters,
 } from '@/lib/semesters';
 
@@ -220,6 +221,44 @@ describe('semesterLabel', () => {
 
   it('leaves a real semester alone', () => {
     expect(semesterLabel('2026 Summer Term 2')).toBe('2026 Summer Term 2');
+  });
+});
+
+describe('shortSemesterLabel', () => {
+  it('abbreviates every term', () => {
+    expect(shortSemesterLabel('2023 Winter Term 1')).toBe('2023W1');
+    expect(shortSemesterLabel('2023 Winter Term 2')).toBe('2023W2');
+    expect(shortSemesterLabel('2024 Summer Term 1')).toBe('2024S1');
+    expect(shortSemesterLabel('2024 Summer Term 2')).toBe('2024S2');
+  });
+
+  it('covers every term in TERMS, so none falls back to the full label', () => {
+    for (const term of TERMS) {
+      const short = shortSemesterLabel(formatSemester(2026, term));
+      expect(short).toMatch(/^2026[WS][12]$/);
+    }
+  });
+
+  it('is short enough for the panel not to truncate it', () => {
+    // The whole point: "2023 Winter Te…" told a student nothing.
+    for (const term of TERMS) {
+      expect(shortSemesterLabel(formatSemester(2026, term)).length).toBe(6);
+    }
+  });
+
+  it('keeps the readable name for the unassigned bucket', () => {
+    expect(shortSemesterLabel(UNASSIGNED_SEMESTER)).toBe('Unassigned');
+  });
+
+  it('leaves anything that is not a semester as it reads', () => {
+    // Hand-edited labels shouldn't be mangled into something meaningless.
+    expect(shortSemesterLabel('Exchange year')).toBe('Exchange year');
+  });
+
+  it('is display-only — the full label is what is stored', () => {
+    const label = formatSemester(2023, 'Winter Term 1');
+    expect(shortSemesterLabel(label)).not.toBe(label);
+    expect(parseSemester(label)).toEqual({ year: 2023, term: 'Winter Term 1' });
   });
 });
 

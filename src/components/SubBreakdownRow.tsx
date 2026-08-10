@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { SubBreakdown } from '@/types/grades';
+import { ConfirmDeleteDialog } from './ConfirmDeleteDialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/NumberInput';
@@ -18,6 +20,7 @@ export function SubBreakdownRow({
   onUpdate,
   onDelete,
 }: SubBreakdownRowProps) {
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const { achievedMarks, fullMarks } = subBreakdown;
 
   /** Blank clears the value; anything unparseable is ignored rather than corrected. */
@@ -36,6 +39,9 @@ export function SubBreakdownRow({
     const next = parseEntry(value);
     if (next !== undefined) onUpdate({ fullMarks: next });
   };
+
+  /** Worth spelling out before deleting: an unmarked row loses nothing. */
+  const hasMarks = achievedMarks !== null && fullMarks !== null;
 
   // Shown so the marks-based total stays checkable at a glance. Can exceed 100%
   // when bonus marks are awarded.
@@ -77,11 +83,25 @@ export function SubBreakdownRow({
         variant="ghost"
         size="icon"
         className="h-8 w-8 text-muted-foreground hover:text-destructive"
-        onClick={onDelete}
+        onClick={() => setConfirmDeleteOpen(true)}
         disabled={!canDelete}
+        aria-label="Delete sub-breakdown"
       >
         <Trash2 className="h-4 w-4" />
       </Button>
+
+      <ConfirmDeleteDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title={`Delete ${subBreakdown.name.trim() || 'this sub-breakdown'}?`}
+        description={
+          hasMarks
+            ? `This row is marked ${achievedMarks} out of ${fullMarks}. Deleting it removes that score from the breakdown, and cannot be undone.`
+            : 'Deleting this row cannot be undone.'
+        }
+        confirmLabel="Delete row"
+        onConfirm={onDelete}
+      />
     </div>
   );
 }

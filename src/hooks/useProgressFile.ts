@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { Course, GradeData } from '@/types/grades';
+import { plural } from '@/lib/utils';
 import {
   PROGRESS_DIRECTORY_NAME,
   ProgressApiUnavailableError,
@@ -10,8 +11,6 @@ import {
   saveProgressAsSingleFile,
   saveProgressToServer,
 } from '@/lib/progressFile';
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /**
  * Drives Save Progress and Reload Progress.

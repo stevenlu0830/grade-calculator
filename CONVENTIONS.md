@@ -69,7 +69,7 @@ pages / components  →  hooks  →  lib  →  types
 - Dialogs that create something wrap their fields in a `<form>` with a `type="submit"` confirm button, so Return works.
 - A dialog that *edits* existing data holds a draft and commits on Apply, so Cancel truly discards. Seed the draft at mount in an inner component `key`ed on `open` — not from an effect depending on the data, and not by trusting Radix to unmount on close.
 - Numeric fields in a draft hold **raw text**, so a box can be emptied and retyped. Parse, clamp and default on commit, never per keystroke, and reject blanks there with a message rather than inventing a value. See `PolicyDraft` in `gradePolicies.ts`.
-- A destructive action that reaches beyond the thing clicked — deleting a semester takes its courses — confirms first, with the blast radius spelled out. Deleting one object doesn't.
+- **Every delete confirms**, through the shared `ConfirmDeleteDialog`. There is no undo anywhere, so each caller spells out the blast radius — what else goes with it, and how much of it there is — rather than asking "are you sure?".
 - Toasts: `import { toast } from 'sonner'`. Use `toast.success` / `toast.error`. The shadcn `use-toast` hook is legacy — don't add usages.
 
 ## TypeScript
