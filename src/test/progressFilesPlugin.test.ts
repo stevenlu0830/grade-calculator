@@ -76,6 +76,7 @@ describe('writeProgressFiles against a real folder', () => {
   const makeCourse = (name: string): Course => ({
     id: `id-${name}`,
     name,
+    semester: '2026 Winter Term 1',
     breakdowns: [],
   });
 

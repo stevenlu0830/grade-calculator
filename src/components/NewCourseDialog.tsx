@@ -15,10 +15,12 @@ interface NewCourseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdd: (name: string) => void;
+  /** Shown so it's clear which semester the course will land in. */
+  semester?: string;
 }
 
 /** Prompts for a course name before the course is created. */
-export function NewCourseDialog({ open, onOpenChange, onAdd }: NewCourseDialogProps) {
+export function NewCourseDialog({ open, onOpenChange, onAdd, semester }: NewCourseDialogProps) {
   const [name, setName] = useState('');
   const trimmed = name.trim();
 
@@ -40,7 +42,9 @@ export function NewCourseDialog({ open, onOpenChange, onAdd }: NewCourseDialogPr
         <DialogHeader>
           <DialogTitle>New course</DialogTitle>
           <DialogDescription>
-            Give the course a name. You can rename it later.
+            {semester
+              ? `Give the course a name. It will be added to ${semester}.`
+              : 'Give the course a name. You can rename it later.'}
           </DialogDescription>
         </DialogHeader>
 

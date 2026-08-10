@@ -32,9 +32,20 @@ export interface Breakdown {
   subBreakdowns: SubBreakdown[];
 }
 
+/** UBC's four terms. See `TERMS` in `semesters.ts` for their ordering. */
+export type Term = 'Winter Term 1' | 'Winter Term 2' | 'Summer Term 1' | 'Summer Term 2';
+
 export interface Course {
   id: string;
   name: string;
+  /**
+   * The semester this course belongs to, as a label like `"2026 Summer Term 2"`.
+   *
+   * An empty string means unassigned — courses saved before semesters existed.
+   * There is no separate semester record; a semester exists because courses
+   * name it.
+   */
+  semester: string;
   breakdowns: Breakdown[];
 }
 

@@ -29,7 +29,7 @@ describe('addBreakdown', () => {
   it('creates a breakdown with one auto-named, blank sub-breakdown', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('CPSC 121'));
+    act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() => result.current.addBreakdown(courseId, newBreakdown()));
 
@@ -43,7 +43,7 @@ describe('addBreakdown', () => {
   it('defaults to no grading policy', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() => result.current.addBreakdown(courseId, newBreakdown()));
 
@@ -54,7 +54,7 @@ describe('addBreakdown', () => {
   it('carries a drop-lowest policy set at creation', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() =>
       result.current.addBreakdown(
@@ -73,7 +73,7 @@ describe('addBreakdown', () => {
   it('carries a downweight policy set at creation', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() =>
       result.current.addBreakdown(courseId, newBreakdown(advancedOptionUpdate('downweight')))
@@ -92,7 +92,7 @@ describe('updateBreakdown', () => {
   it('applies a whole policy over the existing one', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() =>
       result.current.addBreakdown(courseId, newBreakdown(advancedOptionUpdate('dropLowest')))
@@ -114,7 +114,7 @@ describe('updateBreakdown', () => {
   it('clears both policies for none', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() =>
       result.current.addBreakdown(courseId, newBreakdown(advancedOptionUpdate('downweight')))
@@ -131,7 +131,7 @@ describe('marks are stored verbatim', () => {
   it('keeps a score above full marks', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() => result.current.addBreakdown(courseId, newBreakdown()));
     const breakdown = result.current.courses[0].breakdowns[0];
@@ -153,7 +153,7 @@ describe('marks are stored verbatim', () => {
   it('does not rewrite the score when full marks are lowered', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() => result.current.addBreakdown(courseId, newBreakdown()));
     const breakdown = result.current.courses[0].breakdowns[0];
@@ -178,7 +178,7 @@ describe('sub-breakdown auto-naming', () => {
   it('continues the counter', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() => result.current.addBreakdown(courseId, newBreakdown()));
     const breakdownId = result.current.courses[0].breakdowns[0].id;
@@ -196,7 +196,7 @@ describe('sub-breakdown auto-naming', () => {
   it('refuses to delete the last sub-breakdown', () => {
     const { result } = renderHook(() => useGradeStore(memoryStorage()));
 
-    act(() => result.current.addCourse('C'));
+    act(() => result.current.addCourse('C', '2026 Winter Term 1'));
     const courseId = result.current.courses[0].id;
     act(() => result.current.addBreakdown(courseId, newBreakdown()));
     const breakdown = result.current.courses[0].breakdowns[0];
@@ -214,7 +214,7 @@ describe('persistence', () => {
     const storage = memoryStorage();
     const { result } = renderHook(() => useGradeStore(storage));
 
-    act(() => result.current.addCourse('CPSC 121'));
+    act(() => result.current.addCourse('CPSC 121', '2026 Winter Term 1'));
 
     expect(storage.saved.map(c => c.name)).toEqual(['CPSC 121']);
   });

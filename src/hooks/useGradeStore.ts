@@ -72,8 +72,8 @@ export function useGradeStore(storage: CourseStorage = localCourseStorage) {
     storage.save(courses);
   }, [courses, storage]);
 
-  const addCourse = useCallback((name: string) => {
-    setCourses(prev => [...prev, { id: createId(), name, breakdowns: [] }]);
+  const addCourse = useCallback((name: string, semester: string) => {
+    setCourses(prev => [...prev, { id: createId(), name, semester, breakdowns: [] }]);
   }, []);
 
   const deleteCourse = useCallback((courseId: string) => {

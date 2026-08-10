@@ -5,13 +5,14 @@
 
 ## 1. What this is
 
-A single-page, client-only calculator for UBC-style weighted course grades. A student enters courses → weighted **breakdowns** (e.g. "Assignments 30%") → **sub-breakdowns** (individual assignments, each scored out of its own marks), and sees breakdown grades, weighted contributions, and a final letter grade recompute live.
+A single-page, client-only calculator for UBC-style weighted course grades. A student enters **semesters** → courses → weighted **breakdowns** (e.g. "Assignments 30%") → **sub-breakdowns** (individual assignments, each scored out of its own marks), and sees breakdown grades, weighted contributions, and a final letter grade recompute live.
 
 **Defining characteristics:**
 - **Almost zero backend.** No auth, no telemetry, no third-party calls. The one exception is a local `/api/progress` route served by the Vite dev server so Save/Reload can touch `progresses/` on disk (§8) — it doesn't exist in a static build. The only external fetch is a Google Fonts stylesheet in `src/index.css`.
 - **`localStorage` is the database.** One key, one JSON blob.
 - **All state in one hook**, instantiated once, prop-drilled down three levels.
 - **Marks-based**: a grade is total marks achieved over total marks available, so a 45/50 test outweighs a 9/10 quiz.
+- **Grouped by semester**, chosen from a year and one of UBC's four terms.
 - Supports drop-lowest, downweight-lowest and full-credit-threshold grading policies, plus saving each course to its own JSON file in a `progresses/` folder.
 
 ## 2. Stack
@@ -25,7 +26,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Styling | Tailwind 3 + CSS variables | shadcn/ui `default` style, slate base |
 | Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
-| Tests | Vitest 3 + jsdom + Testing Library | 240 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 265 tests in `src/test/`; React components untested |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template. `jspdf`/`jspdf-autotable` are now unused too, since PDF export was removed — still in `package.json`, no longer in the bundle.
 
@@ -49,9 +50,10 @@ This project was scaffolded with Lovable ([project dashboard](https://lovable.de
 ## 4. Domain model
 
 ```
-Course
- └── Breakdown          weight %, optional grading policy (drop / downweight / full credit)
-      └── SubBreakdown    name + marks achieved out of full marks
+Semester                 a label like "2026 Summer Term 2"
+ └── Course              belongs to exactly one semester
+      └── Breakdown      weight %, optional grading policy (drop / downweight / full credit)
+           └── SubBreakdown   name + marks achieved out of full marks
 ```
 
 Defined in [src/types/grades.ts](src/types/grades.ts). Children carry denormalized parent IDs (`breakdownId`, `courseId`) — currently unused for lookups, since every mutation walks the tree by ID from the root.
@@ -62,10 +64,11 @@ The exact shape persisted to `localStorage`:
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "courses": [{
     "id": "8f14e45f-…",
     "name": "CPSC 121",
+    "semester": "2026 Summer Term 2",
     "breakdowns": [{
       "id": "b1c2d3e4-…",
       "courseId": "8f14e45f-…",
@@ -87,6 +90,7 @@ The exact shape persisted to `localStorage`:
 
 Things to notice:
 
+- **`semester`** groups courses. A course belongs to exactly one; `''` means unassigned. See §4a.
 - **`achievedMarks` is marks, not a percentage** — 18 out of 20, not 90.
 - **Both mark fields start blank.** `fullMarks` is `number | null`; a row with no full marks yet can't produce a score, so it's excluded from the totals until filled in. (Legacy data is the exception — see §5.)
 - **`achievedMarks: null`** on Assignment 2 means entered-but-ungraded. It's excluded from the totals rather than counted as zero, and its 25 marks don't drag the denominator either.
@@ -96,6 +100,19 @@ Things to notice:
 
 **Nullability is semantic.** `achievedMarks`, `fullMarks` and `weight` are all `number | null`, where `null` = "the user hasn't entered this." A `0` is a real, meaningful zero. This distinction drives the whole UI: `null` renders as `—`, propagates through calculations, and excludes a row from totals. Preserve it — reads use `??`, never `||`.
 
+### 4a. Semesters
+
+Courses are grouped by semester, chosen from a year and one of UBC's four terms, and stored on the course as a label: `"semester": "2026 Summer Term 2"`.
+
+**There is no separate semester record.** A semester exists because courses name it, which keeps the saved file exactly one key per course. [semesters.ts](src/lib/semesters.ts) derives the panel's list from the courses, and `TERMS` is ordered *chronologically within an academic year* — Winter Term 1 starts in September, so it precedes the Summer terms.
+
+Two consequences:
+
+- **A semester with no courses doesn't survive a reload.** Nothing anchors it. Newly added ones live in `pendingSemesters` state in `Index.tsx` so they're selectable immediately, but that's session-only.
+- **Courses saved before semesters existed** normalize to `''` and appear under **Unassigned**, sorted last, rather than vanishing from the panel.
+
+**Adding a course requires a selected semester** — the course has to belong to one. `New Course` reports "Add a semester first" rather than opening the dialog when none is selected.
+
 ## 5. State & persistence
 
 [src/hooks/useGradeStore.ts](src/hooks/useGradeStore.ts) is the only stateful module.
@@ -103,7 +120,7 @@ Things to notice:
 - `useState<Course[]>` with a lazy initializer that reads through a `CourseStorage`.
 - A `useEffect` on `[courses]` writes the whole array back on every change — autosave is implicit and total; no component ever calls `localStorage` itself.
 - Persistence is injected, not imported: the hook takes a `CourseStorage` and defaults to `localCourseStorage`. Swapping in a server-backed or in-memory implementation touches no state logic. See [src/lib/courseStorage.ts](src/lib/courseStorage.ts).
-- Storage key: `ubc-grade-calculator-data`, written as `{ version, courses }` with `SCHEMA_VERSION = 3`. Read and write both degrade to console errors (private-mode and quota failures).
+- Storage key: `ubc-grade-calculator-data`, written as `{ version, courses }` with `SCHEMA_VERSION = 4`. Read and write both degrade to console errors (private-mode and quota failures).
 - **Migration.** `migrate(raw)` in `courseStorage.ts` accepts either the current envelope or bare version-1 data (a `Course[]` using `components`/`subComponents`, where `grade` was a percentage). v1 rows are given `LEGACY_FULL_MARKS` (100), which makes them calculate to exactly the grade they did before; ids are preserved so nothing re-keys. New rows created today start blank instead. A second pass, `normalizeCourses`, backfills fields added after a save — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, since `undefined !== null` would make every later nullability check read a missing field as *set*. Covered by [courseStorage.test.ts](src/test/courseStorage.test.ts).
 - IDs come from `createId()` in [src/lib/id.ts](src/lib/id.ts) — `crypto.randomUUID()`, with a `Math.random` fallback for non-DOM environments.
 - Nested updates go through the module-local `mapCourse` / `mapBreakdown` helpers, so each action stays a few lines rather than a four-deep `.map` pyramid.
@@ -266,7 +283,7 @@ The trade-off: **it only works while a Vite server is running.** A `npm run buil
 Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
-3. **No component test coverage.** `src/lib/*` and the store hook are well covered (240 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
+3. **No component test coverage.** `src/lib/*` and the store hook are well covered (265 tests); every React *component* is untested. The three dialogs and `AdvancedOptions` carry the most branching — Enter-to-submit, the Cancel-discards-draft behaviour and the collapsed advanced section are all verified by hand only.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.
 6. **Unused heavyweight deps** — react-query, recharts, react-hook-form, zod, embla — inflate the bundle without contributing. 30 shadcn primitives are also unused, though those tree-shake.
@@ -280,6 +297,7 @@ Ordered roughly by how likely each is to bite you.
 
 - **New grading policy** (e.g. "best N of M"): add fields to `Breakdown` in `types/grades.ts` → add the rule to `gradePolicies.ts` (an `applyBestOf` over `MarkPair[]`, a case in `getActiveAdvancedOption`, and one in `advancedOptionUpdate`) → add a `case` in `calculateBreakdownGrade`'s switch → add a switch to `AdvancedOptions` → add the columns to `CSV_HEADERS` and `COLUMN_ALIASES`. The switch is exhaustive over `AdvancedOption`, so TypeScript will point at every site you still need to touch.
 - **New breakdown type:** add an entry to `BREAKDOWN_PRESETS` in `breakdownPresets.ts` with its `singular`, **in alphabetical position** — a test enforces the ordering. The dialog and the CSV importer both read from there, so that's the only edit.
+- **New term or semester rule:** `TERMS` and the helpers in `semesters.ts`; the panel and dialog both read from there.
 - **Changing the persisted shape:** bump `SCHEMA_VERSION`, extend `migrate`/`normalizeCourses` in `courseStorage.ts`, and add a test asserting old data still calculates the same. A field added without backfilling deserialises as `undefined`, which any `!== null` check reads as *set*. Saved data is the one thing here that can't be regenerated.
 - **New route:** add `<Route>` in `App.tsx` above the `*` catch-all, create the page in `src/pages/`.
 - **Deeper store access:** convert `useGradeStore` into a Context provider rather than calling the hook twice (§5).
@@ -308,6 +326,9 @@ Ordered roughly by how likely each is to bite you.
 | Old saved data vanished after an update | `migrate` didn't recognise the shape — check the console and the `version` field | [courseStorage.ts](src/lib/courseStorage.ts), `migrate` |
 | Reload Progress wiped everything | It replaces, never merges (§8). A file that fails validation leaves data intact | `looksLikeProgress` in [progressFile.ts](src/lib/progressFile.ts) |
 | Save downloads a file instead of writing progresses/ | No Vite server behind the page — a static build has no Node process (§8) | `ProgressApiUnavailableError` |
+| A semester disappeared after reload | It had no courses — nothing anchors an empty semester (§4a) | `visibleSemesters` in [semesters.ts](src/lib/semesters.ts) |
+| Old courses missing from the panel | They should be under **Unassigned**; check `migrate` backfilled `semester` to `''` | [courseStorage.ts](src/lib/courseStorage.ts) |
+| New Course does nothing | No semester selected — courses must belong to one (§4a) | `openNewCourse` in [Index.tsx](src/pages/Index.tsx) |
 | A course vanishes from the save | Its generated filename failed the server's safety check; the two must agree | `courseFileName` vs `isSafeProgressFileName` |
 | A deleted course came back after reload | Stale-file pruning didn't run, or the folder holds files from an older save | `writeProgressFiles` in [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts) |
 | Saving with no courses left the old files | Save must always run, even for an empty list — a "nothing to save" guard reintroduces this | `saveProgress` in [useProgressFile.ts](src/hooks/useProgressFile.ts) |
@@ -324,7 +345,8 @@ Ordered roughly by how likely each is to bite you.
 
 Terms are used consistently across code, UI, and CSV headers — keep it that way.
 
-- **Course** — a class. Top-level container. Has a final grade only when its breakdown weights total 100.
+- **Semester** — a year plus one of UBC's four terms, e.g. "2026 Summer Term 2". Groups courses; stored on each course rather than as its own record.
+- **Course** — a class, belonging to one semester. Has a final grade only when its breakdown weights total 100.
 - **Breakdown** — a weighted category within a course ("Assignments", "Final Exam"). Carries the weight and the optional grading policy. Formerly called a "component"; that word now means React component only.
 - **Sub-breakdown** — one graded item inside a breakdown ("Assignment 1", "Quiz 3"). Holds the marks achieved and the marks available.
 - **Marks achieved** (`achievedMarks`) — what the student scored, in marks. `null` until entered.

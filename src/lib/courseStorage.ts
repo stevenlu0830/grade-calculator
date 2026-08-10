@@ -22,8 +22,9 @@ export const STORAGE_KEY = 'ubc-grade-calculator-data';
  * 1 → bare `Course[]` using "component" wording, `grade` as a percentage.
  * 2 → `{ version, courses }` with breakdown wording and marks out of full marks.
  * 3 → adds `fullCreditGrade`.
+ * 4 → adds `semester` on each course.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 interface StoredData {
   version: number;
@@ -98,7 +99,7 @@ function migrateLegacy(courses: LegacyCourse[]): Course[] {
       };
     });
 
-    return { id: courseId, name: legacyCourse.name ?? '', breakdowns };
+    return { id: courseId, name: legacyCourse.name ?? '', semester: '', breakdowns };
   });
 }
 
@@ -112,6 +113,9 @@ function migrateLegacy(courses: LegacyCourse[]): Course[] {
 function normalizeCourses(courses: Course[]): Course[] {
   return courses.map(course => ({
     ...course,
+    // Courses saved before semesters existed become "unassigned" rather than
+    // vanishing from the panel.
+    semester: course.semester ?? '',
     breakdowns: (course.breakdowns ?? []).map(breakdown => ({
       ...breakdown,
       fullCreditGrade: breakdown.fullCreditGrade ?? null,

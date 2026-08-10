@@ -183,9 +183,30 @@ describe('migrate', () => {
     it('unwraps the courses array', () => {
       const current = {
         version: SCHEMA_VERSION,
-        courses: [{ id: 'c', name: 'MATH 200', breakdowns: [] }],
+        courses: [{ id: 'c', name: 'MATH 200', semester: '2026 Winter Term 1', breakdowns: [] }],
       };
       expect(migrate(current)).toEqual(current.courses);
+    });
+
+    it('backfills a missing semester as unassigned', () => {
+      // Courses saved before semesters existed must stay visible, in the
+      // unassigned bucket, rather than disappearing from the panel.
+      const beforeSemesters = {
+        version: 3,
+        courses: [{ id: 'c', name: 'MATH 200', breakdowns: [] }],
+      };
+      const [course] = migrate(beforeSemesters);
+
+      expect(course.semester).toBe('');
+      expect(course.semester).not.toBeUndefined();
+    });
+
+    it('keeps an explicit semester', () => {
+      const withSemester = {
+        version: SCHEMA_VERSION,
+        courses: [{ id: 'c', name: 'MATH 200', semester: '2026 Summer Term 2', breakdowns: [] }],
+      };
+      expect(migrate(withSemester)[0].semester).toBe('2026 Summer Term 2');
     });
 
     it('survives an envelope with no courses', () => {

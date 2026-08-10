@@ -2,12 +2,13 @@
 
 > Structural map of the UBC Grade Calculator. AI-optimized: paths + responsibilities, no prose.
 > **Stack:** Vite 8 + React 18 + TypeScript + Tailwind 3 + shadcn/ui. No backend, no auth, no network calls.
-> **Vocabulary:** Course → **Breakdown** (weighted category) → **Sub-breakdown** (one graded item). "Component" now means *React component* only.
+> **Vocabulary:** Semester → Course → **Breakdown** (weighted category) → **Sub-breakdown** (one graded item). "Component" now means *React component* only.
 
 ## Quick orientation
 
 | I want to... | Go to |
 |---|---|
+| Change semesters, terms or their ordering | [src/lib/semesters.ts](src/lib/semesters.ts) |
 | Change grade math (marks totals, weighting) | [src/lib/gradeCalculations.ts](src/lib/gradeCalculations.ts) |
 | Change a drop/downweight policy, or add one | [src/lib/gradePolicies.ts](src/lib/gradePolicies.ts) |
 | Change the breakdown types offered, or sub-breakdown auto-naming | [src/lib/breakdownPresets.ts](src/lib/breakdownPresets.ts) |
@@ -43,7 +44,8 @@ pages / components  →  hooks  →  lib (domain + format + io)  →  types
 
 Three-level tree; parent IDs denormalized onto children.
 
-- `Course` — `{ id, name, breakdowns }`
+- `Course` — `{ id, name, semester, breakdowns }`
+  - `semester` is a label like `"2026 Summer Term 2"`; `''` means unassigned. There is **no separate semester record** — a semester exists because courses name it.
 - `Breakdown` — `{ id, courseId, name, weight, dropLowestCount, downweightLowestCount, downweightPercent, fullCreditGrade, subBreakdownLabel, subBreakdowns }`
   - `fullCreditGrade: number | null` — the percentage that earns 100%. **Independent** of drop/downweight, which it composes with.
   - `subBreakdownLabel` is the singular noun used to auto-name rows ("Assignment" → "Assignment 3").
@@ -51,6 +53,7 @@ Three-level tree; parent IDs denormalized onto children.
   - `achievedMarks` is **marks scored, not a percentage**. `null` = not entered, never 0.
   - `fullMarks: number | null` — blank until entered; the row is excluded from totals until then. Never clamps `achievedMarks`, so bonus marks are allowed.
 - `AdvancedOption` — `'none' | 'dropLowest' | 'downweight'` (derived, never persisted).
+- `Term` — the four UBC terms.
 
 ## Domain — `src/lib/gradeCalculations.ts`
 
@@ -79,6 +82,17 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - `applyDropLowest(sorted, count)` — drops N worst; their `full` leaves the denominator too. Keeps ≥1.
 - `applyDownweightLowest(sorted, count, percent)` — scales both sides of the fraction; `null` if all weight vanishes.
 - `clampPercent`, `DEFAULT_DROP_LOWEST_COUNT`, `DEFAULT_DOWNWEIGHT_COUNT`, `DEFAULT_DOWNWEIGHT_PERCENT`.
+
+## Semesters — `src/lib/semesters.ts`
+
+- `TERMS` — the four terms in **chronological order within an academic year** (Winter Term 1 starts in September), not alphabetical.
+- `formatSemester(year, term)` / `parseSemester(label)` — `"2026 Summer Term 2"` both ways.
+- `compareSemestersDescending` — most recent first; unparseable labels (including unassigned) sort **last**.
+- `semestersFromCourses` / `visibleSemesters(courses, pending)` — the panel's list. `pending` holds semesters added this session that have no courses yet.
+- `coursesIn` / `countCoursesIn` / `semesterLabel` — filtering and display; `''` renders as "Unassigned".
+- `semesterYearOptions(referenceYear)` — next year back through five, newest first. Takes the year so it stays pure.
+
+⚠️ A semester with no courses **does not survive a reload** — nothing anchors it, since the saved format is one `"semester"` key per course.
 
 ## Presets — `src/lib/breakdownPresets.ts`
 
@@ -109,7 +123,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ## Persistence & I/O seams
 
-- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface + `localCourseStorage`. Key `ubc-grade-calculator-data`, stored as `{ version, courses }`. `SCHEMA_VERSION = 3`. `migrate(raw)` converts bare v1 `components`/`grade` data (defaulting `fullMarks` to `LEGACY_FULL_MARKS`), then `normalizeCourses` backfills fields added later — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, which a `!== null` check would otherwise read as *set*.
+- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface + `localCourseStorage`. Key `ubc-grade-calculator-data`, stored as `{ version, courses }`. `SCHEMA_VERSION = 4`. `migrate(raw)` converts bare v1 `components`/`grade` data (defaulting `fullMarks` to `LEGACY_FULL_MARKS`), then `normalizeCourses` backfills fields added later — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, which a `!== null` check would otherwise read as *set*.
 - [src/lib/download.ts](src/lib/download.ts) — `downloadBlob`. The **only** place the app hands a file to the browser.
 - [src/lib/id.ts](src/lib/id.ts) — `createId()`, `crypto.randomUUID()` with a fallback.
 - [src/lib/exportFormat.ts](src/lib/exportFormat.ts) — `timestampedFilename`.
@@ -144,6 +158,8 @@ Presentational; state arrives as props. None read the store.
 - [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) — three switches as a **controlled field group** over a `GradingPolicy`. Drop/downweight disable each other; Full Credit deliberately does not. Holds one piece of local state, `fullCreditEnabled`, because `fullCreditGrade === null` already means "off" and so can't also mean "on, threshold not typed yet". No help tooltips — they never worked and were removed. Used by both dialogs; holds no rules of its own.
 - [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) — modal wrapper with Cancel/Apply. Draft state lives in an inner component `key`ed on `open`, so it re-seeds on every open (see the comment there — two subtler approaches were both wrong).
 - [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx) (74) — prompts for a course name; Add disabled while blank.
+- [SemesterPanel.tsx](src/components/SemesterPanel.tsx) — left panel: Add Semester button plus the semester list with course counts; selecting one filters the course view.
+- [AddSemesterDialog.tsx](src/components/AddSemesterDialog.tsx) — year and term dropdowns producing a semester label.
 - [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) — preset picker + "Others (Specify)" free text + weight + a collapsed advanced-options section, in a `<form>` so Return submits. Caps the dropdown with `max-h-56`.
 - [NumberInput.tsx](src/components/NumberInput.tsx) (26) — `<Input type="number">` that blurs on wheel so scrolling can't rewrite a mark. **Use this for every numeric field.**
 - [GradeDisplay.tsx](src/components/GradeDisplay.tsx) (43) — the only grade-rendering surface.
@@ -171,7 +187,7 @@ shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 
-## Tests — `src/test/`, 240 across 8 files
+## Tests — `src/test/`, 265 across 9 files
 
 All tests live here, one file per module, importing via `@/lib/...`:
 [gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [progressFile](src/test/progressFile.test.ts) (save/reload round trip, bad input, older files) · [useGradeStore](src/test/useGradeStore.test.ts) (hook driven via `renderHook` with in-memory storage).
