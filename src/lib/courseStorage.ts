@@ -42,8 +42,9 @@ export const RETIRED_STORAGE_KEY = 'ubc-grade-calculator-data-retired';
  * 3 → adds `fullCreditGrade`.
  * 4 → adds `semester` on each course.
  * 5 → adds a `semesters` list to the envelope and `isBonus` on each breakdown.
+ * 6 → adds `equalWeightSubBreakdowns` on each breakdown.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 interface StoredData {
   version: number;
@@ -115,6 +116,7 @@ function migrateLegacy(courses: LegacyCourse[]): Course[] {
         downweightPercent: legacyBreakdown.downweightPercent ?? null,
         fullCreditGrade: null,
         isBonus: false,
+        equalWeightSubBreakdowns: false,
         // Best available guess for auto-naming; the student can rename freely.
         subBreakdownLabel: name || 'Item',
         subBreakdowns,
@@ -143,6 +145,9 @@ function normalizeCourses(courses: Course[]): Course[] {
       fullCreditGrade: breakdown.fullCreditGrade ?? null,
       // Breakdowns saved before bonus existed all counted towards the 100%.
       isBonus: breakdown.isBonus ?? false,
+      // Likewise, anything saved before equal weighting existed was totalled by
+      // marks, so it has to keep being totalled by marks.
+      equalWeightSubBreakdowns: breakdown.equalWeightSubBreakdowns ?? false,
       subBreakdowns: (breakdown.subBreakdowns ?? []).map(sub => ({
         ...sub,
         fullMarks: sub.fullMarks ?? null,

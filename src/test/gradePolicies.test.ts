@@ -4,6 +4,7 @@ import {
   DEFAULT_DOWNWEIGHT_COUNT,
   DEFAULT_DOWNWEIGHT_PERCENT,
   DEFAULT_DROP_LOWEST_COUNT,
+  EQUAL_WEIGHT_FULL_MARKS,
   MarkPair,
   NO_POLICY,
   NO_POLICY_DRAFT,
@@ -14,6 +15,7 @@ import {
   clampPercent,
   describeDraftErrors,
   describePolicy,
+  equalizeWeights,
   getActiveAdvancedOption,
   policyDraftErrors,
   policyFromDraft,
@@ -32,6 +34,7 @@ const breakdown = (overrides: Partial<Breakdown> = {}): Breakdown => ({
   downweightPercent: null,
   fullCreditGrade: null,
   isBonus: false,
+  equalWeightSubBreakdowns: false,
   subBreakdownLabel: 'Item',
   subBreakdowns: [],
   ...overrides,
@@ -321,6 +324,85 @@ describe('describePolicy with bonus', () => {
 
   it('stays quiet for an ordinary breakdown', () => {
     expect(describePolicy({ ...NO_POLICY, isBonus: false })).toBeNull();
+  });
+});
+
+describe('equalizeWeights', () => {
+  it('restates every item out of the same marks, keeping its percentage', () => {
+    expect(equalizeWeights(pairs([40, 50], [6, 10]))).toEqual([
+      { achieved: 80, full: EQUAL_WEIGHT_FULL_MARKS },
+      { achieved: 60, full: EQUAL_WEIGHT_FULL_MARKS },
+    ]);
+  });
+
+  it('turns the marks total into a plain average of percentages', () => {
+    expect(totalPercentage(equalizeWeights(pairs([40, 50], [6, 10])))).toBe(70);
+    // Which is not what the same marks total to by size.
+    expect(totalPercentage(pairs([40, 50], [6, 10]))).toBeCloseTo(76.66666666666667, 10);
+  });
+
+  it('leaves the ranking alone, so drop lowest still picks the worst score', () => {
+    const equalized = equalizeWeights(pairs([4, 10], [30, 50], [50, 50]));
+    expect(sortByPercentage(equalized).map(p => p.achieved)).toEqual([40, 60, 100]);
+  });
+
+  it('keeps a bonus score above full marks', () => {
+    expect(equalizeWeights(pairs([12, 10]))).toEqual([{ achieved: 120, full: 100 }]);
+  });
+
+  it('does not mutate its input', () => {
+    const input = pairs([40, 50]);
+    equalizeWeights(input);
+    expect(input).toEqual([{ achieved: 40, full: 50 }]);
+  });
+
+  it('is a no-op on items already out of the same marks', () => {
+    expect(equalizeWeights(pairs([80, 100], [60, 100]))).toEqual(pairs([80, 100], [60, 100]));
+  });
+});
+
+describe('describePolicy with equal weight', () => {
+  it('says so, because it changes what the marks add up to', () => {
+    expect(describePolicy({ ...NO_POLICY, equalWeightSubBreakdowns: true })).toBe('Equal weight');
+  });
+
+  it('reads before the rules about which marks count', () => {
+    expect(
+      describePolicy({ ...NO_POLICY, equalWeightSubBreakdowns: true, dropLowestCount: 1 })
+    ).toBe('Equal weight · Drop lowest 1');
+  });
+
+  it('follows bonus, which changes what the weight means', () => {
+    expect(
+      describePolicy({ ...NO_POLICY, isBonus: true, equalWeightSubBreakdowns: true })
+    ).toBe('Bonus · Equal weight');
+  });
+
+  it('stays quiet for a breakdown totalled by marks', () => {
+    expect(describePolicy({ ...NO_POLICY, equalWeightSubBreakdowns: false })).toBeNull();
+  });
+});
+
+describe('equal weight through a draft', () => {
+  it('is off in a blank draft', () => {
+    expect(NO_POLICY_DRAFT.equalWeight).toBe(false);
+    expect(policyFromDraft(NO_POLICY_DRAFT).equalWeightSubBreakdowns).toBe(false);
+  });
+
+  it('round-trips both ways', () => {
+    const policy = { ...NO_POLICY, equalWeightSubBreakdowns: true };
+    expect(toPolicyDraft(policy).equalWeight).toBe(true);
+    expect(policyFromDraft(toPolicyDraft(policy))).toEqual(policy);
+  });
+
+  it('needs no number, so it can never block a commit', () => {
+    expect(policyDraftErrors({ ...NO_POLICY_DRAFT, equalWeight: true })).toEqual([]);
+  });
+
+  it('survives switching a marks policy on and off', () => {
+    const draft = { ...NO_POLICY_DRAFT, equalWeight: true, dropLowest: true };
+    expect(policyFromDraft(draft).equalWeightSubBreakdowns).toBe(true);
+    expect(policyFromDraft({ ...draft, dropLowest: false }).equalWeightSubBreakdowns).toBe(true);
   });
 });
 

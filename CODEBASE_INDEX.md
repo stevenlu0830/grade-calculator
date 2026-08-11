@@ -11,8 +11,8 @@
 | Change sign-in, registration or the auth gate | [src/lib/auth.ts](src/lib/auth.ts), [src/components/AuthForm.tsx](src/components/AuthForm.tsx), [src/App.tsx](src/App.tsx) |
 | Change where account data is stored, or the SQL/RLS | [src/lib/supabaseCourseStorage.ts](src/lib/supabaseCourseStorage.ts), [supabase/migrations/0001_user_data.sql](supabase/migrations/0001_user_data.sql) |
 | Change semesters, terms or their ordering | [src/lib/semesters.ts](src/lib/semesters.ts) |
-| Change grade math (marks totals, weighting) | [src/lib/gradeCalculations.ts](src/lib/gradeCalculations.ts) |
-| Change a drop/downweight policy, or add one | [src/lib/gradePolicies.ts](src/lib/gradePolicies.ts) |
+| Change grade math (marks totals, weighting, re-marking a row) | [src/lib/gradeCalculations.ts](src/lib/gradeCalculations.ts) |
+| Change a drop/downweight/equal-weight policy, or add one | [src/lib/gradePolicies.ts](src/lib/gradePolicies.ts) |
 | Change the breakdown types offered, or sub-breakdown auto-naming | [src/lib/breakdownPresets.ts](src/lib/breakdownPresets.ts) |
 | Change how a grade is displayed (colour, letter, decimals) | [src/lib/gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Change state shape, persistence, or migrate saved data | [src/hooks/useGradeStore.ts](src/hooks/useGradeStore.ts), [src/lib/courseStorage.ts](src/lib/courseStorage.ts) |
@@ -21,6 +21,7 @@
 | Change the add-course / add-breakdown dialogs | [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx), [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) |
 | Change page layout / header | [src/pages/Index.tsx](src/pages/Index.tsx), [src/components/CourseToolbar.tsx](src/components/CourseToolbar.tsx) |
 | Change colours or animations | [src/index.css](src/index.css), [tailwind.config.ts](tailwind.config.ts) |
+| Change which panel scrolls, or the pinned course header | [src/pages/Index.tsx](src/pages/Index.tsx), [src/components/CourseSection.tsx](src/components/CourseSection.tsx) |
 
 ## Layering
 
@@ -59,7 +60,7 @@ Three-level tree; parent IDs denormalized onto children.
 - `SubBreakdown` — `{ id, breakdownId, name, achievedMarks: number | null, fullMarks: number | null }`
   - `achievedMarks` is **marks scored, not a percentage**. `null` = not entered, never 0.
   - `fullMarks: number | null` — blank until entered; the row is excluded from totals until then. Never clamps `achievedMarks`, so bonus marks are allowed.
-- `AdvancedOption` — `'none' | 'dropLowest' | 'downweight'` (derived, never persisted).
+- `AdvancedOption` — `'none' | 'dropLowest' | 'downweight'` (derived, never persisted). `equalWeightSubBreakdowns` and `isBonus` are plain booleans outside it.
 - `Term` — the four UBC terms.
 
 ## Domain — `src/lib/gradeCalculations.ts`
@@ -67,11 +68,12 @@ Three-level tree; parent IDs denormalized onto children.
 - `clampPercentage(v)` — `[0, 100]`, used **only** for picking a letter grade; a breakdown's own percentage is never clamped.
 - `getEnteredMarks(subBreakdowns)` — scored rows only; skips rows with no full marks yet and rows worth 0 marks (can't divide by them). Marks above full marks are kept.
 - **Precision:** full float64 throughout, no intermediate rounding. Rounding happens once, in `gradeFormatting`.
-- `calculateBreakdownGrade(breakdown)` — **total achieved / total available**, as a percentage, then scaled by `applyFullCreditGrade`. `null` if ungraded; a single score bypasses drop/downweight (but **not** full credit); otherwise dispatches on `getActiveAdvancedOption`.
+- `calculateBreakdownGrade(breakdown)` — **total achieved / total available**, as a percentage, then scaled by `applyFullCreditGrade`. `null` if ungraded; `equalizeWeights` runs first when `equalWeightSubBreakdowns` is on; a single score bypasses drop/downweight (but **not** full credit); otherwise dispatches on `getActiveAdvancedOption`.
 - `calculateWeightedValue(breakdown)` — the breakdown's contribution in points.
 - `calculateCourseGrade(breakdowns)` — sums `calculateWeightedValue`; `null` if nothing qualifies. Does **not** validate weights. Bonus breakdowns are summed like any other — that's what makes them bonus.
 - `getTotalWeight(breakdowns)` — sums weights **excluding bonus**, so a correctly-weighted course with extra credit still reads 100.
 - `getBonusWeight(breakdowns)` — the extra credit available on top; `CourseSection` shows it as a note.
+- `rescaleAchievedMarks(achieved, oldFull, newFull)` — the score that keeps its percentage when a row is re-marked out of a new total (8/10 → 16/20). `null` stays `null`; an unset or zero `oldFull` leaves the score alone; never clamps. The **one** place a stored mark is rounded (6 dp), so `7/9` out of 20 stores `15.555556`. Drives `ChangeFullMarkDialog`.
 - `areWeightsValid(breakdowns)` — the single 100% gate, `1e-9` tolerance so float drift can't hide a valid grade. Used by `CourseSection`. A bonus can't fill a shortfall.
 - Constants: `PERCENTAGE_MIN/MAX`, `LEGACY_FULL_MARKS` (100, for reading v1 data and pre-`Full Marks` CSVs only), `REQUIRED_TOTAL_WEIGHT`.
 
@@ -79,14 +81,15 @@ Three-level tree; parent IDs denormalized onto children.
 
 Domain rules shared by the calculator and the toggle UI so they can't disagree. Operates on `MarkPair { achieved, full }`.
 
-- `GradingPolicy` — the policy fields (`dropLowestCount`, `downweightLowestCount`, `downweightPercent`, `fullCreditGrade`, `isBonus`). A `Breakdown` satisfies it structurally, so the same helpers serve a saved breakdown *and* the policy a dialog commits.
+- `GradingPolicy` — the policy fields (`dropLowestCount`, `downweightLowestCount`, `downweightPercent`, `fullCreditGrade`, `isBonus`, `equalWeightSubBreakdowns`). A `Breakdown` satisfies it structurally, so the same helpers serve a saved breakdown *and* the policy a dialog commits.
 - `MarksPolicyFields` — the mutually-exclusive trio (drop + downweight). `fullCreditGrade` sits outside it deliberately.
 - `NO_POLICY` — frozen all-nulls starting point.
 - `getActiveAdvancedOption(policy)` — derives the mode from field nullability. Drop wins if both set.
 - `advancedOptionUpdate(option)` — the **marks fields only** for a mode, clearing the one it replaces, so spreading it preserves `fullCreditGrade`. Returns a fresh object, never `NO_POLICY` itself.
 - `applyFullCreditGrade(percentage, threshold)` — `min(100, pct / threshold * 100)`. A `null`/`undefined` threshold is a no-op; `0` awards full credit rather than dividing by zero.
-- `describePolicy(policy)` — one-line summary, or `null`. **Joins** parts with ` · ` since full credit combines with a marks policy; "Bonus" reads first, because it changes what the weight means. Shared by the breakdown card and the add dialog.
+- `describePolicy(policy)` — one-line summary, or `null`. **Joins** parts with ` · ` since full credit and equal weight combine with a marks policy; "Bonus" reads first (it changes what the weight means), then "Equal weight" (it changes what the marks add up to). Shared by the breakdown card and the add dialog.
 - `PolicyDraft` + `toPolicyDraft` / `policyFromDraft` / `policyDraftErrors` / `describeDraftErrors` / `NO_POLICY_DRAFT` — a policy **mid-edit**, with every number as raw text so a box can be emptied and retyped. A `GradingPolicy` can't express "switched on, box empty" (a null count *is* "off"). `policyDraftErrors` names any switched-on field left blank; both dialogs refuse to commit until it's empty. `policyFromDraft` clamps **on commit**, not per keystroke, and routes through `advancedOptionUpdate` so exclusivity lives in one place.
+- `equalizeWeights(pairs)` + `EQUAL_WEIGHT_FULL_MARKS` (100) — restates every row out of the same marks, keeping its percentage, which turns the marks total into a plain average of percentages. Applied **before** ranking and the marks policies; a no-op when everything is already out of the same total.
 - `percentageOf` / `sortByPercentage` — ranking is **by percentage**, so 4/10 ranks below 15/20.
 - `totalPercentage(pairs)` — summed marks over summed availability; `null` if nothing available.
 - `applyDropLowest(sorted, count)` — drops N worst; their `full` leaves the denominator too. Keeps ≥1.
@@ -108,7 +111,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ## Presets — `src/lib/breakdownPresets.ts`
 
-- `BREAKDOWN_PRESETS` — the 12 offered types in **ascending alphabetical order, case-insensitively** (so iClickers sits before In-class Exercises, not after WebWorks); each carries an explicit `singular`, spelled out because rules mangle Quizzes/WebWorks. A test enforces the ordering.
+- `BREAKDOWN_PRESETS` — the 14 offered types in **ascending alphabetical order, case-insensitively** (so iClickers sits before In-class Exercises, not after WebWorks); each carries an explicit `singular`, spelled out because rules mangle Quizzes/WebWorks. A test enforces the ordering.
 - `OTHER_BREAKDOWN` — sentinel for "Others (Specify)".
 - `presetFor(label)` — preset lookup; an unknown name is its own singular.
 - `nextSubBreakdownName(label, existingNames)` — `<label> <n>`, continuing past the highest number used so deletions don't cause collisions.
@@ -119,13 +122,14 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - `formatGrade(grade)` — rounded to `DISPLAY_DECIMALS`, or `—`.
 - `formatWeight(weight)` — up to 2 decimals, trailing zeros dropped, so a 99.99 shortfall doesn't render as "100.0".
 - `toOfficialGrade(grade)` / `formatOfficialGrade(grade)` — the grade a course is **recorded** with: the percentage rounded to a whole number, half up. Not clamped, so a bonus can exceed 100.
+- `formatMarks(marks)` — a mark as typed (`18`, not `18.00`), or `—`. Keeps the 6 places a rescaled mark carries.
 - `getLetterGrade(grade)` — UBC scale from the `LETTER_SCALE` table. Callers pass the **official** grade, so a 79.6 grades as an A-.
-- `getGradeColor` / `getGradeBg` — one `COLOUR_BANDS` table pairing text + background.
+- `getGradeColor` / `getGradeBg` — the same `LETTER_SCALE` row's text + background classes, so a letter and its colour can't drift apart. Clamped, since a bonus has no band above A+.
 - `NO_GRADE` — the `—` placeholder.
 
-⚠️ Two scales coexist deliberately: colour bands at 90/80/70/60, letter grades on the UBC scale. An 82 is green and an `A-`.
+⚠️ One scale, letters **and** colours: A+/A green, A- green-yellow, B+/B/B- yellow, C+/C/C- golden, D orange, F red. Letters share a colour on purpose — the colour is the grade family, the letter is where in it. Class strings are spelled out per row because Tailwind only ships what it can find by scanning. The hues live in `index.css`: the light theme darkens the top four to ~25% lightness for legibility on white (`#008A00` / `#548A00` / `#7A7A00` / `#8A7000`), `.dark` keeps them at full brightness (`#00FF00` / `#ADFF2F` / `#FFFF00` / `#FFD000`); orange and red are the same in both.
 
-⚠️ A course's final grade renders as `79.60 → 80 : A-` — exact, official, letter. The colour follows the official value too, so the letter and the colour can't disagree. Breakdown grades have no official value; only courses do.
+⚠️ A course's final grade renders as `79.60 → 80 : A-` — exact, official, letter — and only the official half is coloured: `80 : A-` gets both the text colour and the tinted chip, the exact figure and the arrow get neither. Breakdown grades have no official value; only courses do.
 
 ## Auth & accounts
 
@@ -158,7 +162,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ## Persistence & I/O seams
 
-- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface (**async** `load`/`save`) + `localCourseStorage`, both trading in `GradeData`. Also `EMPTY_GRADE_DATA`, and `readLocalData()` / `hasLocalData()` — the synchronous reads the sign-in import offer asks its question with. Key `ubc-grade-calculator-data`, stored as `{ version, courses, semesters }`. `SCHEMA_VERSION = 5`.
+- [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface (**async** `load`/`save`) + `localCourseStorage`, both trading in `GradeData`. Also `EMPTY_GRADE_DATA`, and `readLocalData()` / `hasLocalData()` — the synchronous reads the sign-in import offer asks its question with. Key `ubc-grade-calculator-data`, stored as `{ version, courses, semesters }`. `SCHEMA_VERSION = 6`.
 - [src/lib/supabaseCourseStorage.ts](src/lib/supabaseCourseStorage.ts) — `CourseStorage` over `public.user_data`. Pure `buildUserDataRow(userId, data)` / `parseUserDataRow(row)` split from the effectful `supabaseCourseStorage(userId, client?)`. Stores the **same envelope** `localStorage` does, so both share `migrate`. `maybeSingle()` on read (a new account has no row, which isn't an error); `upsert` on `user_id` for write. Errors **throw** rather than log — the store needs to know a read failed.
 - [src/lib/debouncedStorage.ts](src/lib/debouncedStorage.ts) — `debouncedStorage(inner, delayMs = 600)` decorator returning a `FlushableStorage` (`+ flush()`, `cancel()`). Coalesces a burst into one write of the newest data; every superseded `save`'s promise still settles with the write that replaced it. Reads pass straight through. Claims the pending write *before* awaiting, so a save arriving mid-flight queues a fresh timer instead of being dropped. `migrate(raw)` converts bare v1 `components`/`grade` data (defaulting `fullMarks` to `LEGACY_FULL_MARKS`), then `normalizeCourses` backfills fields added later — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, which a `!== null` check would otherwise read as *set*, and `isBonus` becomes `false`. Anything older than v5 has no semester list; the store rebuilds it from the courses.
 - [src/lib/download.ts](src/lib/download.ts) — `downloadBlob`. The **only** place the app hands a file to the browser.
@@ -191,10 +195,11 @@ One JSON file **per course** in `progresses/`, plus a manifest, written automati
 
 Presentational; state arrives as props. None read the store.
 
-- [CourseSection.tsx](src/components/CourseSection.tsx) (133) — one course. Gates the final grade on `areWeightsValid`; owns its own `AddBreakdownDialog` instance.
+- [CourseSection.tsx](src/components/CourseSection.tsx) — one course. Gates the final grade on `areWeightsValid`; owns its own `AddBreakdownDialog` instance. Its header is `sticky -top-3` inside the scrolling courses panel, so the name and final grade stay visible while marks scroll; the card must **not** carry `overflow-hidden`, which would make it the header's scroll container.
 - [BreakdownCard.tsx](src/components/BreakdownCard.tsx) (133) — one breakdown. Local UI state: `isOpen`, `showAdvanced`.
-- [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) (80) — name, `achieved / full` mark inputs, and the row's own percentage.
-- [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) — four switches as a **controlled field group** over a `PolicyDraft`. Drop/downweight disable each other; Full Credit and Bonus Grade deliberately do not. **Stateless** — every box is raw text on the draft, so a field can be emptied and retyped; the parents reject blanks on submit. No help tooltips — they never worked and were removed. Used by both dialogs; holds no rules of its own.
+- [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) — name, `achieved / full` mark inputs, the row's own percentage, and the *Change full mark* button (tooltip-labelled, so the row stays narrow enough for two courses side by side).
+- [ChangeFullMarkDialog.tsx](src/components/ChangeFullMarkDialog.tsx) — re-marks one row out of a new total, previewing `8 / 10 (80.00%) becomes 24 / 30` and committing both mark fields together via `rescaleAchievedMarks`. Draft in an inner component `key`ed on `open`, like the advanced options modal. Editing the full-marks box in the row is the *other* operation — that changes the score.
+- [AdvancedOptions.tsx](src/components/AdvancedOptions.tsx) — five switches as a **controlled field group** over a `PolicyDraft`. Drop/downweight disable each other; Equal Weight, Full Credit and Bonus Grade deliberately do not. **Stateless** — every box is raw text on the draft, so a field can be emptied and retyped; the parents reject blanks on submit. No help tooltips — they never worked and were removed. Used by both dialogs; holds no rules of its own.
 - [AdvancedOptionsDialog.tsx](src/components/AdvancedOptionsDialog.tsx) — modal wrapper with Cancel/Apply. Draft state lives in an inner component `key`ed on `open`, so it re-seeds on every open (see the comment there — two subtler approaches were both wrong). Apply refuses a draft with an empty box and shows which field.
 - [ConfirmDeleteDialog.tsx](src/components/ConfirmDeleteDialog.tsx) — **every** delete goes through this: sub-breakdown, breakdown, course, semester. Stateless and domain-free — title, description, confirm label. The component owning the trash button owns the open flag and writes the description, so each one names what else is about to go.
 - [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx) (74) — prompts for a course name; Add disabled while blank.
@@ -202,12 +207,12 @@ Presentational; state arrives as props. None read the store.
 - [AddSemesterDialog.tsx](src/components/AddSemesterDialog.tsx) — year and term dropdowns producing a semester label.
 - [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) — preset picker + "Others (Specify)" free text + weight + a collapsed advanced-options section, in a `<form>` so Return submits. Caps the dropdown with `max-h-56`.
 - [NumberInput.tsx](src/components/NumberInput.tsx) (26) — `<Input type="number">` that blurs on wheel so scrolling can't rewrite a mark. **Use this for every numeric field.**
-- [GradeDisplay.tsx](src/components/GradeDisplay.tsx) — the only grade-rendering surface. With `showLetterGrade` it renders the official chain `79.60 → 80 : A-` and takes its colour from the rounded value.
+- [GradeDisplay.tsx](src/components/GradeDisplay.tsx) — the only grade-rendering surface. With `showLetterGrade` it renders the official chain `79.60 → 80 : A-`: `80 : A-` becomes a tinted chip coloured from the rounded value, and the exact figure and arrow get no colour and no background. Without it, the tint goes back on the pill. Horizontal padding follows whichever element carries the background.
 - [CourseToolbar.tsx](src/components/CourseToolbar.tsx) — header **Reload Progress** / **Save Progress** / **New Course** actions and their toasts.
 
 ## Pages & hooks
 
-- [src/pages/Index.tsx](src/pages/Index.tsx) — owns the store, header, empty state, `NewCourseDialog`, and the horizontal snap carousel. Takes `{ storage, user }` from the gate. Renders `FullPageLoader` while loading and a retry screen on `loadError` (editing on top of a failed read would save an empty tree over the account). Toasts `saveError`. Hosts `AccountMenu` and `ImportLocalDataDialog`.
+- [src/pages/Index.tsx](src/pages/Index.tsx) — owns the store, header, empty state, `NewCourseDialog`, and the horizontal snap carousel. `h-screen flex flex-col`: the page never scrolls, the semester panel and `<main>` do. `<main>` is the **only** scroll container for the courses (both axes) — a nested `overflow-x-auto` would break the pinned course headers. Cards cap at `max-w-md` so two fit side by side. Takes `{ storage, user }` from the gate. Renders `FullPageLoader` while loading and a retry screen on `loadError` (editing on top of a failed read would save an empty tree over the account). Toasts `saveError`. Hosts `AccountMenu` and `ImportLocalDataDialog`.
 - [src/pages/NotFound.tsx](src/pages/NotFound.tsx) (24) — 404.
 - [src/hooks/useProgressFile.ts](src/hooks/useProgressFile.ts) — owns both **Save Progress** and **Reload Progress**: calls the local API, falls back on `ProgressApiUnavailableError`, and reports outcomes. Holds the hidden multi-file input used by the fallback.
 - [src/hooks/use-mobile.tsx](src/hooks/use-mobile.tsx) — 768px hook; used only by `ui/sidebar`.

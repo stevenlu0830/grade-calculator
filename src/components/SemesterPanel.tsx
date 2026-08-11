@@ -41,19 +41,22 @@ export function SemesterPanel({
   };
 
   return (
-    <aside className="w-60 shrink-0 border-r border-border bg-card/40">
-      <div className="sticky top-[105px] p-4 space-y-4">
-        <Button onClick={onAddSemester} className="w-full">
-          <Plus className="h-4 w-4 mr-2" />
+    // Narrow on purpose: the rows hold "2023W1" and a course count, so anything
+    // wider is empty space taken from the courses beside it. The panel scrolls
+    // on its own now that the page doesn't.
+    <aside className="w-40 shrink-0 overflow-y-auto border-r border-border bg-card/40">
+      <div className="p-2 space-y-2">
+        <Button size="sm" onClick={onAddSemester} className="w-full px-2 text-xs">
+          <Plus className="h-3.5 w-3.5 mr-1" />
           Add Semester
         </Button>
 
         {semesters.length === 0 ? (
-          <p className="text-xs text-muted-foreground px-1">
+          <p className="text-[11px] text-muted-foreground px-1">
             No semesters yet. Add one to start adding courses.
           </p>
         ) : (
-          <nav className="space-y-1">
+          <nav className="space-y-0.5">
             {semesters.map(semester => {
               const isSelected = semester === selected;
               const count = countCoursesIn(courses, semester);
@@ -64,7 +67,7 @@ export function SemesterPanel({
                 <div
                   key={semester || UNASSIGNED_SEMESTER}
                   className={cn(
-                    'group flex items-center rounded-md pr-1 transition-colors',
+                    'group flex items-center rounded-md pr-0.5 transition-colors',
                     isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
                   )}
                 >
@@ -76,13 +79,13 @@ export function SemesterPanel({
                         onClick={() => onSelect(semester)}
                         aria-current={isSelected ? 'true' : undefined}
                         aria-label={semesterLabel(semester)}
-                        className="flex flex-1 min-w-0 items-center gap-2 px-3 py-2 text-left text-sm"
+                        className="flex flex-1 min-w-0 items-center gap-1.5 px-2 py-1.5 text-left text-xs"
                       >
-                        <CalendarDays className="h-4 w-4 shrink-0 opacity-70" />
+                        <CalendarDays className="h-3.5 w-3.5 shrink-0 opacity-70" />
                         <span className="flex-1 truncate">{shortSemesterLabel(semester)}</span>
                         <span
                           className={cn(
-                            'text-xs tabular-nums',
+                            'text-[10px] tabular-nums',
                             isSelected ? 'opacity-80' : 'text-muted-foreground'
                           )}
                         >
@@ -101,7 +104,7 @@ export function SemesterPanel({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      'h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
+                      'h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
                       isSelected
                         ? 'text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground'
                         : 'text-muted-foreground hover:text-destructive'
@@ -109,7 +112,7 @@ export function SemesterPanel({
                     onClick={() => setPendingDelete(semester)}
                     aria-label={`Delete ${semesterLabel(semester)}`}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               );

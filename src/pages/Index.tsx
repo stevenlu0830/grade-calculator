@@ -151,7 +151,11 @@ const Index = ({ storage, user }: IndexProps) => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    // One screen tall, split header / body: the body is what scrolls, so the
+    // course cards can pin their headers to the top of it. A flex column rather
+    // than a `calc(100vh - <header height>)` because the header changes height
+    // when it wraps on a narrow window, and that guess would then be wrong.
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       <input
         type="file"
         ref={inputRef}
@@ -181,7 +185,7 @@ const Index = ({ storage, user }: IndexProps) => {
         onDecline={dismissImport}
       />
 
-      <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-sm">
+      <header className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="container max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -212,7 +216,9 @@ const Index = ({ storage, user }: IndexProps) => {
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-105px)]">
+      {/* `min-h-0` so this row can be shorter than its content and hand the
+          overflow to the panels inside it, instead of growing the page. */}
+      <div className="flex min-h-0 flex-1">
         <SemesterPanel
           semesters={semesters}
           selected={activeSemester}
@@ -222,7 +228,12 @@ const Index = ({ storage, user }: IndexProps) => {
           onDeleteSemester={handleDeleteSemester}
         />
 
-        <main className="flex-1 min-w-0 px-4 py-8">
+        {/* The one scroll container for the courses: both axes, so a sticky
+            course header resolves against this box and not against the row of
+            cards inside it. Snapping is `snap-x` alone — proximity, not
+            mandatory — because this box now scrolls vertically too, and
+            mandatory snapping fights a diagonal drag. */}
+        <main className="flex-1 min-w-0 overflow-auto px-3 py-3 snap-x">
           {activeSemester === null ? (
             <EmptyState
               heading="No semesters yet"
@@ -240,9 +251,11 @@ const Index = ({ storage, user }: IndexProps) => {
               }
             />
           ) : (
-            <div className="flex gap-6 overflow-x-auto pb-4 snap-x snap-mandatory">
+            // `items-start` so a short course card stops where its content
+            // does, and its pinned header unpins with it.
+            <div className="flex items-start gap-3">
               {visibleCourses.map(course => (
-                <div key={course.id} className="flex-shrink-0 w-full max-w-2xl snap-start">
+                <div key={course.id} className="flex-shrink-0 w-full max-w-md snap-start">
                   <CourseSection
                     course={course}
                     onUpdateName={name => updateCourseName(course.id, name)}

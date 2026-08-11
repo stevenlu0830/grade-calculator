@@ -36,12 +36,24 @@
 
     --radius: 0.625rem;
 
-    /* Grade colors */
-    --grade-excellent: 150 60% 40%;
-    --grade-good: 168 55% 42%;
-    --grade-average: 45 85% 45%;
-    --grade-passing: 30 80% 50%;
-    --grade-failing: 0 72% 55%;
+    /* Grade colors — one per letter band, not per ten-point block. The bands
+       themselves live in LETTER_SCALE in `gradeFormatting.ts`; these are only
+       the colours those bands are shown in.
+
+       The top four keep their hue but are darkened for this light theme: at full
+       brightness (#00FF00, #ADFF2F, #FFFF00, #FFD000) they were close to
+       illegible on a near-white card, yellow worst of all. Lightness is set so
+       each clears roughly 4.5:1 against the card, which is also what keeps them
+       apart from one another — the hue does the rest. Orange and red were
+       already dark enough to read, so they're untouched. The `.dark` block below
+       restores the full-brightness values, which is the pairing that works
+       there. */
+    --grade-a: 120 100% 27%; /* #008A00 — A+, A */
+    --grade-a-minus: 83.6 100% 27%; /* #548A00 — A- */
+    --grade-b: 60 100% 24%; /* #7A7A00 — B+, B, B- */
+    --grade-c: 48.9 100% 27%; /* #8A7000 — C+, C, C- */
+    --grade-d: 24 100% 50%; /* #FF6600 — D */
+    --grade-f: 0 100% 50%; /* #FF0000 — F */
 
     /* Warning */
     --warning: 38 92% 50%;
@@ -86,11 +98,15 @@
     --input: 230 15% 22%;
     --ring: 230 65% 60%;
 
-    --grade-excellent: 150 55% 50%;
-    --grade-good: 168 50% 50%;
-    --grade-average: 45 80% 55%;
-    --grade-passing: 30 75% 55%;
-    --grade-failing: 0 65% 55%;
+    /* The full-brightness palette, which reads well on a dark card — the same
+       hues the light theme darkens. Unreachable today (no theme provider mounts
+       `.dark`), but this is the pairing to keep if one ever does. */
+    --grade-a: 120 100% 50%; /* #00FF00 */
+    --grade-a-minus: 83.6 100% 59.2%; /* #ADFF2F */
+    --grade-b: 60 100% 50%; /* #FFFF00 */
+    --grade-c: 48.9 100% 50%; /* #FFD000 */
+    --grade-d: 24 100% 50%; /* #FF6600 */
+    --grade-f: 0 100% 50%; /* #FF0000 */
 
     --warning: 38 85% 55%;
     --warning-foreground: 0 0% 100%;

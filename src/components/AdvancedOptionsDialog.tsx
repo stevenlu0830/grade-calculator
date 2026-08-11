@@ -47,8 +47,9 @@ export function AdvancedOptionsDialog({
           <DialogTitle>Advanced options</DialogTitle>
           <DialogDescription>
             Optional rules for this breakdown. Drop Lowest and Downweight are mutually exclusive;
-            Full Credit combines with either, scaling the result so that percentage earns 100%.
-            Bonus makes the whole breakdown extra credit.
+            Equal Weight and Full Credit combine with either — Equal Weight decides what the marks
+            add up to, Full Credit scales the result so that percentage earns 100%. Bonus makes the
+            whole breakdown extra credit.
           </DialogDescription>
         </DialogHeader>
 

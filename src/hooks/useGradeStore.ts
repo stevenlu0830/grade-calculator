@@ -39,6 +39,7 @@ const createBreakdown = (courseId: string, input: NewBreakdown): Breakdown => {
     downweightPercent: input.downweightPercent,
     fullCreditGrade: input.fullCreditGrade,
     isBonus: input.isBonus,
+    equalWeightSubBreakdowns: input.equalWeightSubBreakdowns,
     subBreakdownLabel: input.subBreakdownLabel,
     // Every breakdown starts with one row so there's somewhere to type a mark.
     subBreakdowns: [createSubBreakdown(breakdownId, `${input.subBreakdownLabel} 1`)],

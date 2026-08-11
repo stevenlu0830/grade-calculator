@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { NumberInput } from '@/components/NumberInput';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, Plus, Trash2, Settings2 } from 'lucide-react';
@@ -53,65 +54,74 @@ export function BreakdownCard({
   return (
     <Card className="border-border shadow-sm animate-scale-in">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+        <CardHeader className="p-2 pb-1.5">
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1 flex-1 min-w-0">
               <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0">
                   <ChevronDown
-                    className={`h-4 w-4 transition-transform ${isOpen ? '' : '-rotate-90'}`}
+                    className={`h-3.5 w-3.5 transition-transform ${isOpen ? '' : '-rotate-90'}`}
                   />
                 </Button>
               </CollapsibleTrigger>
               <Input
                 value={breakdown.name}
                 onChange={e => onUpdate({ name: e.target.value })}
-                className="flex-1 h-9 font-medium border-transparent hover:border-border focus:border-border bg-transparent"
+                className="flex-1 min-w-0 h-7 px-1.5 text-xs font-medium border-transparent hover:border-border focus:border-border bg-transparent"
                 placeholder="Breakdown name"
               />
             </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1">
                 <NumberInput
                   min={0}
                   max={100}
                   value={breakdown.weight ?? ''}
                   onChange={handleWeightChange}
-                  className="w-16 h-9 text-center font-mono"
+                  className="w-12 h-7 px-1 text-xs text-center font-mono"
                   aria-label="Breakdown weight"
                 />
-                <span className="text-sm text-muted-foreground">%</span>
+                <span className="text-[10px] text-muted-foreground">%</span>
                 {/* Shown in the header because it changes what that weight
                     means — the advanced options are a click away and collapsed. */}
                 {breakdown.isBonus && (
-                  <Badge variant="secondary" className="font-normal">
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-normal">
                     Bonus
                   </Badge>
                 )}
               </div>
-              <GradeDisplay grade={grade} size="md" />
-              <div className="flex items-center gap-1 min-w-[60px]">
-                <span className="text-xs text-muted-foreground">Weighted:</span>
-                <span className="text-sm font-mono font-medium">
-                  {formatGrade(weightedValue)}
-                </span>
-              </div>
+              <GradeDisplay grade={grade} size="sm" />
+              {/* Abbreviated because the full word cost more room than the
+                  number it labels; the tooltip gives it back. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    W:
+                    <span className="font-mono font-medium text-foreground tabular-nums">
+                      {formatGrade(weightedValue)}
+                    </span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  Weighted: what this breakdown contributes to the course
+                </TooltipContent>
+              </Tooltip>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
                 onClick={() => setConfirmDeleteOpen(true)}
                 aria-label="Delete breakdown"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
         </CardHeader>
 
         <CollapsibleContent>
-          <CardContent className="pt-0">
-            <div className="space-y-2">
+          <CardContent className="p-2 pt-0">
+            <div className="space-y-1">
               {breakdown.subBreakdowns.map(sb => (
                 <SubBreakdownRow
                   key={sb.id}
@@ -123,29 +133,29 @@ export function BreakdownCard({
               ))}
             </div>
 
-            <div className="flex items-center justify-between mt-4">
+            <div className="flex items-center justify-between gap-2 mt-1.5">
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-primary hover:text-primary"
+                className="h-6 px-1.5 text-[11px] text-primary hover:text-primary"
                 onClick={onAddSubBreakdown}
               >
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="h-3 w-3 mr-1" />
                 Add Sub-breakdown
               </Button>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 min-w-0">
                 {/* Surfaced here because the options themselves now live in a
                     modal — otherwise an active policy would be invisible. */}
                 {activePolicy && (
-                  <span className="text-xs text-muted-foreground">{activePolicy}</span>
+                  <span className="truncate text-[10px] text-muted-foreground">{activePolicy}</span>
                 )}
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-muted-foreground"
+                  className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground"
                   onClick={() => setAdvancedOpen(true)}
                 >
-                  <Settings2 className="h-4 w-4 mr-1.5" />
+                  <Settings2 className="h-3 w-3 mr-1" />
                   Advanced
                 </Button>
               </div>

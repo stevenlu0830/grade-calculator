@@ -35,6 +35,14 @@ export interface Breakdown {
    * other breakdowns must still total 100% on their own.
    */
   isBonus: boolean;
+  /**
+   * Whether every sub-breakdown counts the same, whatever it was out of.
+   *
+   * Off by default, which is the marks-based model: a 45/50 test outweighs a
+   * 9/10 quiz. On, each item is rescaled to the same size before anything else
+   * looks at it — see `equalizeWeights` in `gradePolicies.ts`.
+   */
+  equalWeightSubBreakdowns: boolean;
   /** Singular noun used to auto-name new sub-breakdowns, e.g. "Assignment" → "Assignment 3". */
   subBreakdownLabel: string;
   subBreakdowns: SubBreakdown[];

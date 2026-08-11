@@ -5,6 +5,7 @@ import {
   applyDownweightLowest,
   applyDropLowest,
   applyFullCreditGrade,
+  equalizeWeights,
   getActiveAdvancedOption,
   sortByPercentage,
   totalPercentage,
@@ -71,6 +72,38 @@ export function getEnteredMarks(subBreakdowns: SubBreakdown[]): MarkPair[] {
 }
 
 /**
+ * Decimal places kept when marks are rescaled.
+ *
+ * Restating 7/9 out of 20 is 15.555555555555555 in binary floating point, which
+ * is unreadable in an input box and no more accurate than 15.555556. Trimming
+ * here also removes noise like `0.30000000000000004`. Six places is well past
+ * anything that could move a displayed grade.
+ */
+const RESCALED_MARK_DECIMALS = 6;
+
+/**
+ * The marks that keep an item's percentage when what it's out of changes: 8 out
+ * of 10, restated out of 20, is 16.
+ *
+ * Returns `null` when nothing has been scored — there's no percentage to keep —
+ * and leaves the marks alone when the old full marks are unset or zero, since
+ * neither states a percentage to scale from. Marks are never clamped to the new
+ * full marks: a score above full is a bonus, here as everywhere.
+ */
+export function rescaleAchievedMarks(
+  achievedMarks: number | null,
+  fullMarks: number | null,
+  nextFullMarks: number
+): number | null {
+  if (achievedMarks === null) return null;
+  if (fullMarks === null || fullMarks <= 0) return achievedMarks;
+
+  const rescaled = (achievedMarks / fullMarks) * nextFullMarks;
+  const factor = 10 ** RESCALED_MARK_DECIMALS;
+  return Math.round(rescaled * factor) / factor;
+}
+
+/**
  * A breakdown's grade: total marks achieved over total marks available, as a
  * percentage, after applying whichever advanced policy is active.
  *
@@ -88,7 +121,11 @@ export function calculateBreakdownGrade(breakdown: Breakdown): number | null {
 
 /** The marks total before any full-credit scaling. */
 function totalMarksPercentage(breakdown: Breakdown): number | null {
-  const pairs = getEnteredMarks(breakdown.subBreakdowns);
+  const entered = getEnteredMarks(breakdown.subBreakdowns);
+
+  // Rescaling to equal size comes first, so everything below — the ranking, the
+  // dropping, the totalling — sees items that count for the same amount.
+  const pairs = breakdown.equalWeightSubBreakdowns ? equalizeWeights(entered) : entered;
 
   if (pairs.length === 0) return null;
 

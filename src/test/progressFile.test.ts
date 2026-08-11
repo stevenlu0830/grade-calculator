@@ -41,6 +41,7 @@ const makeCourse = (name: string): Course => ({
       downweightPercent: null,
       fullCreditGrade: 80,
       isBonus: false,
+      equalWeightSubBreakdowns: false,
       subBreakdownLabel: 'Assignment',
       subBreakdowns: [
         { id: 's1', breakdownId: `b-${name}`, name: 'Assignment 1', achievedMarks: 4, fullMarks: 10 },

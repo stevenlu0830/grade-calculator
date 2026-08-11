@@ -18,6 +18,7 @@ export interface BreakdownPreset {
  */
 export const BREAKDOWN_PRESETS: readonly BreakdownPreset[] = [
   { label: 'Assignments', singular: 'Assignment' },
+  { label: 'Essay', singular: 'Essay' },
   { label: 'Final Exam', singular: 'Final Exam' },
   { label: 'iClickers', singular: 'iClicker' },
   { label: 'In-class Exercises', singular: 'In-class Exercise' },
@@ -26,6 +27,7 @@ export const BREAKDOWN_PRESETS: readonly BreakdownPreset[] = [
   { label: 'Participation', singular: 'Participation' },
   { label: 'Project Phases', singular: 'Project Phase' },
   { label: 'Quizzes', singular: 'Quiz' },
+  { label: 'Research Paper', singular: 'Research Paper' },
   { label: 'Tests', singular: 'Test' },
   { label: 'Tutorials', singular: 'Tutorial' },
   { label: 'WebWorks', singular: 'WebWork' },

@@ -91,6 +91,25 @@ export function AdvancedOptions({ draft, onChange }: AdvancedOptionsProps) {
       </div>
 
       {/*
+        Equal weight changes what marks the options above are working from, not
+        which of them applies, so it composes with all of them.
+      */}
+      <div className="flex items-start gap-4 pt-1 border-t border-border">
+        <div className="flex items-center gap-2 min-w-[160px] pt-3">
+          <Switch
+            checked={draft.equalWeight}
+            onCheckedChange={enabled => setField('equalWeight', enabled)}
+            aria-label="Equal weight"
+          />
+          <Label className="text-sm font-medium">Equal Weight</Label>
+        </div>
+        <p className="pt-3 text-sm text-muted-foreground">
+          Every sub-breakdown counts the same, even when they're out of different full marks — so
+          8/10 and 40/50 both count as 80%.
+        </p>
+      </div>
+
+      {/*
         Full credit is not part of the mutually-exclusive pair above — it scales
         whatever percentage they produce, so it composes with either. Hence no
         `disabled` here.

@@ -28,6 +28,15 @@ export interface GradingPolicy {
   fullCreditGrade: number | null;
   /** Extra credit: the weight lands on top of the course's 100% rather than in it. */
   isBonus: boolean;
+  /**
+   * Whether every sub-breakdown counts the same, whatever it was out of.
+   *
+   * Off — the default — a breakdown is total marks over total marks available,
+   * so a 45/50 test outweighs a 9/10 quiz. On, each item is rescaled to the same
+   * size first, which is what a course means by "each assignment is worth 5% of
+   * your grade" even though the assignments are marked out of different totals.
+   */
+  equalWeightSubBreakdowns: boolean;
 }
 
 /**
@@ -53,6 +62,7 @@ export const NO_POLICY: GradingPolicy = Object.freeze({
   downweightPercent: null,
   fullCreditGrade: null,
   isBonus: false,
+  equalWeightSubBreakdowns: false,
 });
 
 export const DEFAULT_DROP_LOWEST_COUNT = 1;
@@ -141,6 +151,9 @@ export function describePolicy(policy: GradingPolicy): string | null {
   // First, because it changes what the breakdown's weight means.
   if (policy.isBonus) parts.push('Bonus');
 
+  // Before the marks policies, because it changes what marks they're ranking.
+  if (policy.equalWeightSubBreakdowns) parts.push('Equal weight');
+
   if (dropLowestCount && dropLowestCount > 0) {
     parts.push(`Drop lowest ${dropLowestCount}`);
   } else if (
@@ -179,6 +192,7 @@ export interface PolicyDraft {
   fullCredit: boolean;
   fullCreditGrade: string;
   isBonus: boolean;
+  equalWeight: boolean;
 }
 
 const asDraftText = (value: number | null) => (value === null ? '' : String(value));
@@ -204,6 +218,7 @@ export function toPolicyDraft(policy: GradingPolicy): PolicyDraft {
     fullCredit: policy.fullCreditGrade !== null,
     fullCreditGrade: asDraftText(policy.fullCreditGrade),
     isBonus: policy.isBonus,
+    equalWeight: policy.equalWeightSubBreakdowns,
   };
 }
 
@@ -279,6 +294,7 @@ export function policyFromDraft(draft: PolicyDraft): GradingPolicy {
     ...marks,
     fullCreditGrade: draft.fullCredit ? toPercent(draft.fullCreditGrade, PERCENT_MAX) : null,
     isBonus: draft.isBonus,
+    equalWeightSubBreakdowns: draft.equalWeight,
   };
 }
 
@@ -286,6 +302,32 @@ export function policyFromDraft(draft: PolicyDraft): GradingPolicy {
 
 /** A single item's score as a percentage, used only for ranking. */
 export const percentageOf = (pair: MarkPair): number => (pair.achieved / pair.full) * 100;
+
+/**
+ * What each item is rescaled to be out of when they're weighted equally.
+ *
+ * Any shared number gives the same result; 100 is chosen because it makes the
+ * intermediate marks readable as the percentages they are.
+ */
+export const EQUAL_WEIGHT_FULL_MARKS = 100;
+
+/**
+ * Every item rescaled to be out of the same marks, keeping its percentage.
+ *
+ * This is what turns total-marks arithmetic into a plain average of
+ * percentages: an 18/20 and a 4/5 both become 90/100, so the 20-mark item stops
+ * counting for four times as much as the 5-mark one.
+ *
+ * Applied before ranking and before any marks policy, so drop-lowest and
+ * downweight still pick the worst *percentages* — which equalising doesn't
+ * change — and then operate on items of equal size.
+ */
+export function equalizeWeights(pairs: MarkPair[]): MarkPair[] {
+  return pairs.map(pair => ({
+    achieved: (percentageOf(pair) / 100) * EQUAL_WEIGHT_FULL_MARKS,
+    full: EQUAL_WEIGHT_FULL_MARKS,
+  }));
+}
 
 /** Worst-scoring first, by percentage — so 4/10 ranks below 15/20. */
 export function sortByPercentage(pairs: MarkPair[]): MarkPair[] {

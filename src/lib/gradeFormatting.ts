@@ -21,42 +21,46 @@ export const NO_GRADE = '—';
 export const DISPLAY_DECIMALS = 2;
 
 /**
- * The UBC letter scale, highest band first. Deliberately distinct from the
- * colour bands below — an 82 reads "good" but grades as an A-.
+ * The UBC letter scale, highest band first, each with the colour it's shown in.
+ *
+ * Letter and colour are one table on purpose: the colour *is* the letter's, so a
+ * grade can never be lettered A- and coloured as something else. Several letters
+ * deliberately share a colour — the B and C bands each get one — so the colour
+ * says which grade family a mark is in and the letter says where in it.
  *
  * The bands are read against the *official* grade — the percentage rounded to a
  * whole number — because that's the mark a course is recorded with. An 84.6
  * therefore grades as an A, not an A-.
+ *
+ * Text and background are spelled out rather than built from the token name, so
+ * every class here is a literal Tailwind can find when it scans this file.
  */
 const LETTER_SCALE = [
-  { min: 90, letter: 'A+' },
-  { min: 85, letter: 'A' },
-  { min: 80, letter: 'A-' },
-  { min: 76, letter: 'B+' },
-  { min: 72, letter: 'B' },
-  { min: 68, letter: 'B-' },
-  { min: 64, letter: 'C+' },
-  { min: 60, letter: 'C' },
-  { min: 55, letter: 'C-' },
-  { min: 50, letter: 'D' },
+  { min: 90, letter: 'A+', text: 'text-grade-a', bg: 'bg-grade-a/10' },
+  { min: 85, letter: 'A', text: 'text-grade-a', bg: 'bg-grade-a/10' },
+  { min: 80, letter: 'A-', text: 'text-grade-a-minus', bg: 'bg-grade-a-minus/10' },
+  { min: 76, letter: 'B+', text: 'text-grade-b', bg: 'bg-grade-b/10' },
+  { min: 72, letter: 'B', text: 'text-grade-b', bg: 'bg-grade-b/10' },
+  { min: 68, letter: 'B-', text: 'text-grade-b', bg: 'bg-grade-b/10' },
+  { min: 64, letter: 'C+', text: 'text-grade-c', bg: 'bg-grade-c/10' },
+  { min: 60, letter: 'C', text: 'text-grade-c', bg: 'bg-grade-c/10' },
+  { min: 55, letter: 'C-', text: 'text-grade-c', bg: 'bg-grade-c/10' },
+  { min: 50, letter: 'D', text: 'text-grade-d', bg: 'bg-grade-d/10' },
 ] as const;
 
-const FAILING_LETTER = 'F';
+/** Below every band in the scale. */
+const FAILING_BAND = { letter: 'F', text: 'text-grade-f', bg: 'bg-grade-f/10' } as const;
 
-/** Colour bands, highest first. Text and background are paired so they can't drift. */
-const COLOUR_BANDS = [
-  { min: 90, text: 'text-grade-excellent', bg: 'bg-grade-excellent/10' },
-  { min: 80, text: 'text-grade-good', bg: 'bg-grade-good/10' },
-  { min: 70, text: 'text-grade-average', bg: 'bg-grade-average/10' },
-  { min: 60, text: 'text-grade-passing', bg: 'bg-grade-passing/10' },
-] as const;
+const NO_GRADE_BAND = { letter: NO_GRADE, text: 'text-muted-foreground', bg: 'bg-muted' } as const;
 
-const FAILING_BAND = { text: 'text-grade-failing', bg: 'bg-grade-failing/10' } as const;
-const NO_GRADE_BAND = { text: 'text-muted-foreground', bg: 'bg-muted' } as const;
-
+/**
+ * The band a grade falls in, clamped — a bonus can push a percentage past 100,
+ * and there is no band above A+ for it to land in.
+ */
 const bandFor = (grade: number | null) => {
   if (grade === null) return NO_GRADE_BAND;
-  return COLOUR_BANDS.find(band => grade >= band.min) ?? FAILING_BAND;
+  const clamped = clampPercentage(grade);
+  return LETTER_SCALE.find(band => clamped >= band.min) ?? FAILING_BAND;
 };
 
 /** A grade rounded to `DISPLAY_DECIMALS`, or an em dash if unentered. */
@@ -94,11 +98,22 @@ export function formatWeight(weight: number): string {
   return parseFloat(weight.toFixed(2)).toString();
 }
 
+/**
+ * A mark, as close to how it was typed as possible: "18", not "18.00".
+ *
+ * Marks aren't percentages — they're whatever the course marked the item out of
+ * — so they don't take the fixed two decimals grades do. Trailing zeros are
+ * dropped, and the six places kept are the ones a rescaled mark carries (see
+ * `rescaleAchievedMarks`), so a scaled mark reads back exactly as it's stored.
+ */
+export function formatMarks(marks: number | null): string {
+  if (marks === null) return NO_GRADE;
+  return parseFloat(marks.toFixed(6)).toString();
+}
+
 /** A grade as a UBC letter, or an em dash if unentered. */
 export function getLetterGrade(grade: number | null): string {
-  if (grade === null) return NO_GRADE;
-  const clamped = clampPercentage(grade);
-  return LETTER_SCALE.find(band => clamped >= band.min)?.letter ?? FAILING_LETTER;
+  return bandFor(grade).letter;
 }
 
 export function getGradeColor(grade: number | null): string {

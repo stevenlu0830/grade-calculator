@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { SubBreakdown } from '@/types/grades';
+import { ChangeFullMarkDialog } from './ChangeFullMarkDialog';
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { NumberInput } from '@/components/NumberInput';
-import { formatGrade } from '@/lib/gradeFormatting';
-import { Trash2 } from 'lucide-react';
+import { formatGrade, formatMarks } from '@/lib/gradeFormatting';
+import { Scale, Trash2 } from 'lucide-react';
 
 interface SubBreakdownRowProps {
   subBreakdown: SubBreakdown;
@@ -21,6 +23,7 @@ export function SubBreakdownRow({
   onDelete,
 }: SubBreakdownRowProps) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [changeFullMarkOpen, setChangeFullMarkOpen] = useState(false);
   const { achievedMarks, fullMarks } = subBreakdown;
 
   /** Blank clears the value; anything unparseable is ignored rather than corrected. */
@@ -51,44 +54,70 @@ export function SubBreakdownRow({
       : null;
 
   return (
-    <div className="flex items-center gap-3 py-2 px-3 rounded-md bg-secondary/50 animate-fade-in">
+    <div className="flex items-center gap-1.5 py-1 px-1.5 rounded-md bg-secondary/50 animate-fade-in">
       <Input
         value={subBreakdown.name}
         onChange={e => onUpdate({ name: e.target.value })}
-        className="flex-1 h-8 text-sm bg-card border-border"
+        className="flex-1 min-w-0 h-7 px-2 text-xs bg-card border-border"
         placeholder="Sub-breakdown name"
       />
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1 shrink-0">
         {/* No `max`: a score above full marks is a valid bonus, not an error. */}
         <NumberInput
           value={achievedMarks ?? ''}
           onChange={e => handleAchievedChange(e.target.value)}
-          className="w-20 h-8 text-sm text-center font-mono bg-card border-border"
+          className="w-14 h-7 px-1 text-xs text-center font-mono bg-card border-border"
           placeholder="—"
           aria-label="Marks achieved"
         />
-        <span className="text-xs text-muted-foreground">/</span>
+        <span className="text-[10px] text-muted-foreground">/</span>
         <NumberInput
           value={fullMarks ?? ''}
           onChange={e => handleFullMarksChange(e.target.value)}
-          className="w-20 h-8 text-sm text-center font-mono bg-card border-border"
+          className="w-14 h-7 px-1 text-xs text-center font-mono bg-card border-border"
           placeholder="—"
           aria-label="Full marks"
         />
       </div>
-      <span className="w-14 text-right text-xs font-mono text-muted-foreground tabular-nums">
+      <span className="w-12 shrink-0 text-right text-[10px] font-mono text-muted-foreground tabular-nums">
         {percentage !== null ? `${formatGrade(percentage)}%` : ''}
       </span>
+
+      {/* Re-marking out of a different total keeps the score, which typing over
+          the boxes above does not — hence its own button. Labelled by tooltip
+          rather than text, so the row still fits two courses side by side. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
+            onClick={() => setChangeFullMarkOpen(true)}
+            aria-label="Change full mark"
+          >
+            <Scale className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Change full mark</TooltipContent>
+      </Tooltip>
+
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+        className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
         onClick={() => setConfirmDeleteOpen(true)}
         disabled={!canDelete}
         aria-label="Delete sub-breakdown"
       >
-        <Trash2 className="h-4 w-4" />
+        <Trash2 className="h-3.5 w-3.5" />
       </Button>
+
+      <ChangeFullMarkDialog
+        open={changeFullMarkOpen}
+        onOpenChange={setChangeFullMarkOpen}
+        subBreakdown={subBreakdown}
+        onApply={onUpdate}
+      />
 
       <ConfirmDeleteDialog
         open={confirmDeleteOpen}
@@ -96,7 +125,9 @@ export function SubBreakdownRow({
         title={`Delete ${subBreakdown.name.trim() || 'this sub-breakdown'}?`}
         description={
           hasMarks
-            ? `This row is marked ${achievedMarks} out of ${fullMarks}. Deleting it removes that score from the breakdown, and cannot be undone.`
+            ? `This row is marked ${formatMarks(achievedMarks)} out of ${formatMarks(
+                fullMarks
+              )}. Deleting it removes that score from the breakdown, and cannot be undone.`
             : 'Deleting this row cannot be undone.'
         }
         confirmLabel="Delete row"

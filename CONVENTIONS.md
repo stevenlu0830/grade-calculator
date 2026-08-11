@@ -62,8 +62,9 @@ pages / components  →  hooks  →  lib  →  types
 ## Styling
 
 - Tailwind utilities inline. No CSS modules, no styled-components, no new `.css` files.
-- Semantic tokens only — `bg-background`, `text-muted-foreground`, `border-border`, `text-grade-good`. **Never** raw colors like `text-red-500`.
+- Semantic tokens only — `bg-background`, `text-muted-foreground`, `border-border`, `text-grade-a-minus`. **Never** raw colors like `text-red-500`.
 - New colors: add an HSL var to both `:root` and `.dark` in `src/index.css`, then map it in `tailwind.config.ts`.
+- Grade colours belong to the letter, not to a percentage block: they live on the `LETTER_SCALE` rows in `gradeFormatting.ts`, spelled out as literal class strings so Tailwind can find them. Don't build one by interpolation.
 - Conditional classes use `cn()` from `@/lib/utils`; template literals are acceptable for a single toggle.
 - Numeric values get `font-mono`; the `.grade-display` utility adds `tabular-nums`.
 - Entry animations: `animate-fade-in` (containers) / `animate-scale-in` (cards).

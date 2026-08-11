@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatGrade,
+  formatMarks,
   formatOfficialGrade,
   formatWeight,
   getGradeBg,
@@ -44,6 +45,23 @@ describe('formatGrade', () => {
   });
 });
 
+describe('formatMarks', () => {
+  it('shows a mark the way it was typed, not as a grade', () => {
+    expect(formatMarks(18)).toBe('18');
+    expect(formatMarks(7.5)).toBe('7.5');
+    expect(formatMarks(0)).toBe('0');
+  });
+
+  it('renders an em dash for an unentered mark', () => {
+    expect(formatMarks(null)).toBe('—');
+  });
+
+  it('keeps every place a rescaled mark carries', () => {
+    // What `rescaleAchievedMarks` stores for 7/9 restated out of 20.
+    expect(formatMarks(15.555556)).toBe('15.555556');
+  });
+});
+
 describe('getLetterGrade', () => {
   it('renders an em dash for an unentered grade', () => {
     expect(getLetterGrade(null)).toBe('—');
@@ -82,30 +100,67 @@ describe('getLetterGrade', () => {
   });
 });
 
+// The colour follows the letter band, not a ten-point block: the boundaries
+// below are the letter boundaries, so an 80 (an A-) is coloured as an A- and a
+// 79 (a B+) is coloured as a B.
 describe('grade colour bands', () => {
   it.each([
     [null, 'text-muted-foreground'],
-    [95, 'text-grade-excellent'],
-    [90, 'text-grade-excellent'],
-    [89.9, 'text-grade-good'],
-    [80, 'text-grade-good'],
-    [79.9, 'text-grade-average'],
-    [70, 'text-grade-average'],
-    [69.9, 'text-grade-passing'],
-    [60, 'text-grade-passing'],
-    [59.9, 'text-grade-failing'],
-    [0, 'text-grade-failing'],
+    [95, 'text-grade-a'],
+    [90, 'text-grade-a'],
+    [89.9, 'text-grade-a'],
+    [85, 'text-grade-a'],
+    [84.9, 'text-grade-a-minus'],
+    [80, 'text-grade-a-minus'],
+    [79.9, 'text-grade-b'],
+    [76, 'text-grade-b'],
+    [72, 'text-grade-b'],
+    [68, 'text-grade-b'],
+    [67.9, 'text-grade-c'],
+    [64, 'text-grade-c'],
+    [60, 'text-grade-c'],
+    [55, 'text-grade-c'],
+    [54.9, 'text-grade-d'],
+    [50, 'text-grade-d'],
+    [49.9, 'text-grade-f'],
+    [0, 'text-grade-f'],
   ])('maps %s to %s', (grade, expected) => {
     expect(getGradeColor(grade)).toBe(expected);
   });
 
   it('pairs each text colour with a matching tinted background', () => {
     expect(getGradeBg(null)).toBe('bg-muted');
-    expect(getGradeBg(95)).toBe('bg-grade-excellent/10');
-    expect(getGradeBg(85)).toBe('bg-grade-good/10');
-    expect(getGradeBg(75)).toBe('bg-grade-average/10');
-    expect(getGradeBg(65)).toBe('bg-grade-passing/10');
-    expect(getGradeBg(55)).toBe('bg-grade-failing/10');
+    expect(getGradeBg(95)).toBe('bg-grade-a/10');
+    expect(getGradeBg(82)).toBe('bg-grade-a-minus/10');
+    expect(getGradeBg(75)).toBe('bg-grade-b/10');
+    expect(getGradeBg(65)).toBe('bg-grade-c/10');
+    expect(getGradeBg(52)).toBe('bg-grade-d/10');
+    expect(getGradeBg(40)).toBe('bg-grade-f/10');
+  });
+
+  it('clamps a bonus grade into the top band rather than losing its colour', () => {
+    expect(getGradeColor(110)).toBe('text-grade-a');
+    expect(getGradeBg(110)).toBe('bg-grade-a/10');
+  });
+
+  it('gives every letter a colour, so no band can be left unstyled', () => {
+    const letters = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'];
+    const grades = [95, 87, 82, 78, 74, 70, 66, 62, 57, 52, 20];
+
+    expect(grades.map(getLetterGrade)).toEqual(letters);
+    grades.forEach(grade => {
+      expect(getGradeColor(grade)).toMatch(/^text-grade-/);
+      expect(getGradeBg(grade)).toMatch(/^bg-grade-/);
+    });
+  });
+
+  it('colours the letters that share a band identically', () => {
+    // B+, B and B- are one colour; so are C+, C and C-.
+    expect(new Set([78, 74, 70].map(getGradeColor)).size).toBe(1);
+    expect(new Set([66, 62, 57].map(getGradeColor)).size).toBe(1);
+    // And A+ shares with A, but A- stands apart.
+    expect(getGradeColor(95)).toBe(getGradeColor(87));
+    expect(getGradeColor(87)).not.toBe(getGradeColor(82));
   });
 });
 

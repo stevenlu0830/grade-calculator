@@ -56,11 +56,12 @@ export default {
           foreground: "hsl(var(--warning-foreground))",
         },
         grade: {
-          excellent: "hsl(var(--grade-excellent))",
-          good: "hsl(var(--grade-good))",
-          average: "hsl(var(--grade-average))",
-          passing: "hsl(var(--grade-passing))",
-          failing: "hsl(var(--grade-failing))",
+          a: "hsl(var(--grade-a))",
+          "a-minus": "hsl(var(--grade-a-minus))",
+          b: "hsl(var(--grade-b))",
+          c: "hsl(var(--grade-c))",
+          d: "hsl(var(--grade-d))",
+          f: "hsl(var(--grade-f))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

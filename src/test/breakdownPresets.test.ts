@@ -9,6 +9,7 @@ describe('BREAKDOWN_PRESETS', () => {
   it('offers every breakdown type the dialog advertises, A-Z', () => {
     expect(BREAKDOWN_PRESETS.map(p => p.label)).toEqual([
       'Assignments',
+      'Essay',
       'Final Exam',
       'iClickers',
       'In-class Exercises',
@@ -17,6 +18,7 @@ describe('BREAKDOWN_PRESETS', () => {
       'Participation',
       'Project Phases',
       'Quizzes',
+      'Research Paper',
       'Tests',
       'Tutorials',
       'WebWorks',

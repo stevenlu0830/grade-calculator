@@ -9,6 +9,7 @@ import {
   getBonusWeight,
   getEnteredMarks,
   getTotalWeight,
+  rescaleAchievedMarks,
 } from '@/lib/gradeCalculations';
 
 /** A mark entry: `[achieved, full]`; either side may be `null` for a blank field. */
@@ -33,6 +34,7 @@ const makeBreakdown = (entries: Entry[], overrides: Partial<Breakdown> = {}): Br
     downweightPercent: null,
     fullCreditGrade: null,
     isBonus: false,
+    equalWeightSubBreakdowns: false,
     subBreakdownLabel: 'Item',
     subBreakdowns,
     ...overrides,
@@ -341,6 +343,133 @@ describe('calculateBreakdownGrade', () => {
       );
       expect(grade).toBe(84);
     });
+  });
+});
+
+describe('equal weight sub-breakdowns', () => {
+  const equal = { equalWeightSubBreakdowns: true };
+
+  it('counts a small item the same as a big one', () => {
+    // By marks this is 48/60 = 80%; equally weighted it's the average of 80%
+    // and 60%.
+    const entries: Entry[] = [
+      [40, 50],
+      [6, 10],
+    ];
+    expect(calculateBreakdownGrade(makeBreakdown(entries))).toBeCloseTo(76.66666666666667, 10);
+    expect(calculateBreakdownGrade(makeBreakdown(entries, equal))).toBe(70);
+  });
+
+  it('changes nothing when everything is out of the same marks', () => {
+    const entries: Entry[] = [
+      [8, 10],
+      [6, 10],
+    ];
+    expect(calculateBreakdownGrade(makeBreakdown(entries, equal))).toBe(70);
+    expect(calculateBreakdownGrade(makeBreakdown(entries))).toBe(70);
+  });
+
+  it('changes nothing for a single score', () => {
+    expect(calculateBreakdownGrade(makeBreakdown([[7, 8]], equal))).toBeCloseTo(87.5, 10);
+  });
+
+  it('still ignores ungraded rows and rows out of no marks', () => {
+    const entries: Entry[] = [
+      [40, 50],
+      [null, 10],
+      [5, 0],
+      [6, 10],
+    ];
+    expect(calculateBreakdownGrade(makeBreakdown(entries, equal))).toBe(70);
+  });
+
+  it('drops the lowest percentage, not the smallest item', () => {
+    // 4/10 is the worst score even though 30/50 is the bigger loss of marks.
+    const entries: Entry[] = [
+      [4, 10],
+      [30, 50],
+      [50, 50],
+    ];
+    expect(
+      calculateBreakdownGrade(makeBreakdown(entries, { ...equal, dropLowestCount: 1 }))
+    ).toBe(80);
+  });
+
+  it('downweights the lowest after equalising, so the discount is even', () => {
+    // Percentages [50, 100] with the lowest at half weight: 150/250 * 100.
+    const entries: Entry[] = [
+      [1, 2],
+      [40, 40],
+    ];
+    expect(
+      calculateBreakdownGrade(
+        makeBreakdown(entries, { ...equal, downweightLowestCount: 1, downweightPercent: 50 })
+      )
+    ).toBeCloseTo(83.33333333333333, 10);
+  });
+
+  it('scales for full credit afterwards, like any other total', () => {
+    const entries: Entry[] = [
+      [40, 50],
+      [6, 10],
+    ];
+    // The equally-weighted 70% against an 80% threshold.
+    expect(
+      calculateBreakdownGrade(makeBreakdown(entries, { ...equal, fullCreditGrade: 80 }))
+    ).toBe(87.5);
+  });
+
+  it('lets a bonus score above full marks stay above 100', () => {
+    const entries: Entry[] = [
+      [12, 10],
+      [10, 10],
+    ];
+    expect(calculateBreakdownGrade(makeBreakdown(entries, equal))).toBeCloseTo(110, 10);
+  });
+
+  it('carries through to the course grade', () => {
+    const entries: Entry[] = [
+      [40, 50],
+      [6, 10],
+    ];
+    const breakdowns = [makeBreakdown(entries, { ...equal, weight: 100 })];
+    expect(calculateCourseGrade(breakdowns)).toBe(70);
+  });
+});
+
+describe('rescaleAchievedMarks', () => {
+  it('keeps the percentage when full marks change', () => {
+    expect(rescaleAchievedMarks(8, 10, 20)).toBe(16);
+    expect(rescaleAchievedMarks(45, 50, 100)).toBe(90);
+    expect(rescaleAchievedMarks(20, 20, 7)).toBe(7);
+  });
+
+  it('leaves an unentered mark unentered rather than inventing a zero', () => {
+    expect(rescaleAchievedMarks(null, 10, 20)).toBeNull();
+  });
+
+  it('keeps a zero at zero', () => {
+    expect(rescaleAchievedMarks(0, 10, 20)).toBe(0);
+  });
+
+  it('leaves the mark alone when there is no percentage to scale from', () => {
+    // No full marks yet, or out of zero: both would be a division by nothing.
+    expect(rescaleAchievedMarks(8, null, 20)).toBe(8);
+    expect(rescaleAchievedMarks(8, 0, 20)).toBe(8);
+  });
+
+  it('scales a mark above full marks without clamping it', () => {
+    expect(rescaleAchievedMarks(11, 10, 20)).toBe(22);
+  });
+
+  it('trims floating-point noise instead of showing 17 digits', () => {
+    // 7/9 out of 20 is 15.555555555555555 in binary floating point.
+    expect(rescaleAchievedMarks(7, 9, 20)).toBe(15.555556);
+    expect(rescaleAchievedMarks(0.1, 0.3, 3)).toBe(1);
+  });
+
+  it('handles a new full mark of zero, which scores nothing', () => {
+    expect(rescaleAchievedMarks(8, 10, 0)).toBe(0);
   });
 });
 

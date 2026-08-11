@@ -40,30 +40,33 @@ export function useProgressFile(
     // UI", so deleting every course and saving must leave the folder empty
     // rather than quietly keeping the previous files.
     try {
-      const { directory, written, removed } = await saveProgressToServer(owner, {
+      const { written, removed } = await saveProgressToServer(owner, {
         courses,
         semesters,
       });
       // The manifest is always written; it isn't a course, so it isn't news.
       const savedCourses = written.filter(name => !isManifestFile(name));
 
+      // Where the files went is the app's business, not the student's — they
+      // pressed Save, so the news is how much of their work is saved.
       if (savedCourses.length === 0) {
-        toast.success(
-          removed.length ? `Cleared ${directory}/` : `Nothing to save — ${directory}/ is empty`,
-          { description: removed.length ? `Removed ${plural(removed.length, 'file')}.` : undefined }
-        );
+        toast.success(removed.length ? '0 Courses Saved' : 'Nothing to save', {
+          description: removed.length ? `Removed ${plural(removed.length, 'file')}.` : undefined,
+        });
         return;
       }
 
-      toast.success(`Saved ${plural(savedCourses.length, 'course')} to ${directory}/`, {
+      toast.success(`${plural(savedCourses.length, 'Course')} Saved`, {
         description: removed.length
-          ? `${savedCourses.join(', ')} · removed ${plural(removed.length, 'file')} for deleted courses.`
-          : savedCourses.join(', '),
+          ? `Removed ${plural(removed.length, 'file')} for deleted courses.`
+          : undefined,
       });
     } catch (error) {
       if (error instanceof ProgressApiUnavailableError) {
         saveProgressAsSingleFile({ courses, semesters });
-        toast.success('Progress saved', {
+        // The one place the destination is still worth saying: the file landed
+        // in Downloads rather than in the folder Reload reads.
+        toast.success(`${plural(courses.length, 'Course')} Saved`, {
           description: 'No local server, so everything went to one downloaded file.',
         });
         return;

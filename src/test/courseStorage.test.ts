@@ -284,4 +284,74 @@ describe('migrate', () => {
       expect(coursesOf(legacyData)[0].breakdowns[0].isBonus).toBe(false);
     });
   });
+
+  describe('equal weight sub-breakdowns', () => {
+    /** A version-5 breakdown: everything but the flag added in version 6. */
+    const v5 = {
+      version: 5,
+      courses: [
+        {
+          id: 'c',
+          name: 'CPSC 110',
+          semester: '2026 Winter Term 1',
+          breakdowns: [
+            {
+              id: 'b',
+              courseId: 'c',
+              name: 'Assignments',
+              weight: 100,
+              dropLowestCount: null,
+              downweightLowestCount: null,
+              downweightPercent: null,
+              fullCreditGrade: null,
+              isBonus: false,
+              subBreakdownLabel: 'Assignment',
+              subBreakdowns: [
+                { id: 's1', breakdownId: 'b', name: 'A1', achievedMarks: 40, fullMarks: 50 },
+                { id: 's2', breakdownId: 'b', name: 'A2', achievedMarks: 6, fullMarks: 10 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    it('fills a missing flag with false, not undefined', () => {
+      const breakdown = coursesOf(v5)[0].breakdowns[0];
+
+      expect(breakdown.equalWeightSubBreakdowns).toBe(false);
+      expect('equalWeightSubBreakdowns' in breakdown).toBe(true);
+    });
+
+    it('keeps totalling older data by marks, to the same grade as before', () => {
+      // 46 marks out of 60, exactly what version 5 calculated — not the 70%
+      // those same two scores average to when weighted equally.
+      expect(calculateBreakdownGrade(coursesOf(v5)[0].breakdowns[0])).toBeCloseTo(
+        76.66666666666667,
+        10
+      );
+    });
+
+    it('keeps an explicit flag', () => {
+      const equal = {
+        ...v5,
+        version: SCHEMA_VERSION,
+        courses: [
+          {
+            ...v5.courses[0],
+            breakdowns: [{ ...v5.courses[0].breakdowns[0], equalWeightSubBreakdowns: true }],
+          },
+        ],
+      };
+      const breakdown = coursesOf(equal)[0].breakdowns[0];
+
+      expect(breakdown.equalWeightSubBreakdowns).toBe(true);
+      // The average of 80% and 60%, rather than the marks total above.
+      expect(calculateBreakdownGrade(breakdown)).toBe(70);
+    });
+
+    it('gives v1 data the new field as well', () => {
+      expect(coursesOf(legacyData)[0].breakdowns[0].equalWeightSubBreakdowns).toBe(false);
+    });
+  });
 });
