@@ -1,14 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Course } from '@/types/grades';
 import { SCHEMA_VERSION } from '@/lib/courseStorage';
 import {
+  PROGRESS_API_ROUTE,
   PROGRESS_MANIFEST_FILE,
+  PROGRESS_OWNER_HEADER,
   buildProgressFiles,
   buildProgressJson,
   courseFileName,
+  loadProgressFromServer,
   orderCourses,
   parseProgressFiles,
   parseProgressJson,
+  saveProgressToServer,
 } from '@/lib/progressFile';
 import { calculateBreakdownGrade } from '@/lib/gradeCalculations';
 
@@ -199,6 +203,58 @@ describe('save then reload, end to end', () => {
   it('preserves grading policies, including full credit', () => {
     const { courses } = parseProgressFiles(buildProgressFiles(saved([makeCourse('CPSC 330')])));
     expect(courses[0].breakdowns[0]).toMatchObject({ dropLowestCount: 1, fullCreditGrade: 80 });
+  });
+});
+
+/**
+ * The client half of the per-account folders.
+ *
+ * The server decides which folder to touch purely from this header, so a request
+ * that forgot to send it would quietly land everyone in the same place again.
+ */
+describe('requests name the account they are for', () => {
+  const headersOf = (call: unknown) => {
+    const init = (call as [string, RequestInit])[1];
+    return init.headers as Record<string, string>;
+  };
+
+  const stubFetch = (payload: unknown) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('sends the owner when saving', async () => {
+    const fetchMock = stubFetch({ directory: 'progresses/user-1', written: [], removed: [] });
+
+    await saveProgressToServer('user-1', saved([]));
+
+    const [route] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(route).toBe(PROGRESS_API_ROUTE);
+    expect(headersOf(fetchMock.mock.calls[0])[PROGRESS_OWNER_HEADER]).toBe('user-1');
+  });
+
+  it('keeps the content type it was already sending', async () => {
+    const fetchMock = stubFetch({ directory: 'progresses/user-1', written: [], removed: [] });
+
+    await saveProgressToServer('user-1', saved([]));
+
+    expect(headersOf(fetchMock.mock.calls[0])['Content-Type']).toBe('application/json');
+  });
+
+  it('sends the owner when reloading', async () => {
+    const fetchMock = stubFetch({ directory: 'progresses/user-2', files: [] });
+
+    await loadProgressFromServer('user-2');
+
+    expect(headersOf(fetchMock.mock.calls[0])[PROGRESS_OWNER_HEADER]).toBe('user-2');
   });
 });
 

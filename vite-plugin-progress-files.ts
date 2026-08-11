@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Connect, Plugin, PreviewServer, ViteDevServer } from 'vite';
 
 /**
- * A tiny local API for reading and writing `progresses/*.json` on disk.
+ * A tiny local API for reading and writing `progresses/<owner>/*.json` on disk.
  *
  * A browser page cannot touch the filesystem by itself — that's a sandbox rule,
  * not a missing library. But the dev server is a Node process sitting right
@@ -14,11 +14,24 @@ import type { Connect, Plugin, PreviewServer, ViteDevServer } from 'vite';
  *   PUT  /api/progress  <- { files: [{ name, contents }] }
  *                       -> { directory, written, removed }
  *
+ * Both carry the signed-in account's id in `X-Progress-Owner`, and every request
+ * is confined to that account's own subfolder. Saving is a mirror — it deletes
+ * files whose course is gone — so a single shared folder would mean the second
+ * student to press Save wiped the first one's, and either of them could reload
+ * the other's courses straight into their account.
+ *
  * Only available while a Vite server is running. A statically built copy has no
  * Node process, so the client falls back to a download / file picker there.
  */
 
 export const PROGRESS_API_ROUTE = '/api/progress';
+
+/**
+ * Carries the account id. A header rather than the URL so the id stays out of
+ * request logs, and so `GET` — which has no body — can send it the same way
+ * `PUT` does.
+ */
+export const PROGRESS_OWNER_HEADER = 'x-progress-owner';
 
 export interface ProgressFilePayload {
   name: string;
@@ -51,6 +64,27 @@ export function resolveProgressPath(directory: string, name: string): string | n
   const resolved = path.resolve(directory, name);
   // Belt and braces: even a name that passed the checks must land in `directory`.
   return path.dirname(resolved) === path.resolve(directory) ? resolved : null;
+}
+
+/**
+ * Rejects anything that couldn't be an account id.
+ *
+ * This value names a folder and arrives from the browser, so it gets the same
+ * suspicion filenames get. Supabase ids are UUIDs; the check is deliberately a
+ * little wider than that so a different auth provider doesn't silently break,
+ * but narrow enough that no separator, dot-segment or shell character survives.
+ */
+export function isSafeOwnerId(owner: string): boolean {
+  return /^[A-Za-z0-9_-]{1,64}$/.test(owner);
+}
+
+/** The owner's own folder under `base`, or `null` if the id isn't safe. */
+export function resolveOwnerDirectory(base: string, owner: string): string | null {
+  if (!isSafeOwnerId(owner)) return null;
+  const resolved = path.resolve(base, owner);
+  // As with filenames: the pattern above should make this impossible, so this
+  // is the check that has to hold if the pattern is ever loosened.
+  return path.dirname(resolved) === path.resolve(base) ? resolved : null;
 }
 
 const readBody = (req: Connect.IncomingMessage): Promise<string> =>
@@ -121,22 +155,40 @@ export async function writeProgressFiles(directory: string, incoming: ProgressFi
   return { written, removed };
 }
 
-function createHandler(directory: string, directoryLabel: string): Connect.NextHandleFunction {
+/** The account id this request is for, or `''` if it didn't send a usable one. */
+function ownerOf(req: Connect.IncomingMessage): string {
+  const header = req.headers[PROGRESS_OWNER_HEADER];
+  return Array.isArray(header) ? header[0] ?? '' : header ?? '';
+}
+
+function createHandler(baseDirectory: string, baseLabel: string): Connect.NextHandleFunction {
   return async (req, res, next) => {
     try {
+      if (req.method !== 'GET' && req.method !== 'PUT') {
+        next();
+        return;
+      }
+
+      const owner = ownerOf(req);
+      const directory = resolveOwnerDirectory(baseDirectory, owner);
+      if (directory === null) {
+        // Refusing beats guessing a folder: falling back to a shared one is how
+        // two accounts end up overwriting each other in the first place.
+        sendJson(res, 400, { error: `Missing or invalid ${PROGRESS_OWNER_HEADER} header.` });
+        return;
+      }
+
+      // Shown in the app's toast, so the student can find the folder on disk.
+      const directoryLabel = `${baseLabel}/${owner}`;
+
       if (req.method === 'GET') {
         sendJson(res, 200, { directory: directoryLabel, files: await listProgressFiles(directory) });
         return;
       }
 
-      if (req.method === 'PUT') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { files?: ProgressFilePayload[] };
-        const result = await writeProgressFiles(directory, body.files ?? []);
-        sendJson(res, 200, { directory: directoryLabel, ...result });
-        return;
-      }
-
-      next();
+      const body = JSON.parse((await readBody(req)) || '{}') as { files?: ProgressFilePayload[] };
+      const result = await writeProgressFiles(directory, body.files ?? []);
+      sendJson(res, 200, { directory: directoryLabel, ...result });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       sendJson(res, 500, { error: message });

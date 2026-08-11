@@ -27,6 +27,15 @@ export const PROGRESS_API_ROUTE = '/api/progress';
 export const PROGRESS_DIRECTORY_NAME = 'progresses';
 
 /**
+ * Names the account whose folder to read or write; see the dev server plugin.
+ *
+ * Saving mirrors a folder — files for deleted courses are removed — so without
+ * this, the second student to press Save on a shared dev server would wipe the
+ * first one's files, and Reload would hand either of them the other's courses.
+ */
+export const PROGRESS_OWNER_HEADER = 'x-progress-owner';
+
+/**
  * Holds what no single course file can: the semester list and the course order.
  *
  * Named with a leading underscore so it reads as "not a course" in a file
@@ -268,8 +277,8 @@ export interface SaveResult {
  * The server prunes files whose course was deleted; reload reads *every* JSON in
  * the folder, so leaving them would bring deleted courses back.
  */
-export async function saveProgressToServer(data: GradeData): Promise<SaveResult> {
-  const response = await requestProgressApi({
+export async function saveProgressToServer(owner: string, data: GradeData): Promise<SaveResult> {
+  const response = await requestProgressApi(owner, {
     method: 'PUT',
     body: JSON.stringify({ files: buildProgressFiles(data) }),
     headers: { 'Content-Type': 'application/json' },
@@ -283,17 +292,22 @@ export async function saveProgressToServer(data: GradeData): Promise<SaveResult>
   };
 }
 
-/** Reads every file in `progresses/` back into courses, with no prompt. */
-export async function loadProgressFromServer(): Promise<LoadResult> {
-  const response = await requestProgressApi({ method: 'GET' });
+/** Reads every file in the owner's folder back into courses, with no prompt. */
+export async function loadProgressFromServer(owner: string): Promise<LoadResult> {
+  const response = await requestProgressApi(owner, { method: 'GET' });
   const payload = (await response.json()) as { files?: ProgressFile[] };
   return parseProgressFiles(payload.files ?? []);
 }
 
-async function requestProgressApi(init: RequestInit): Promise<Response> {
+async function requestProgressApi(owner: string, init: RequestInit): Promise<Response> {
   let response: Response;
   try {
-    response = await fetch(PROGRESS_API_ROUTE, init);
+    response = await fetch(PROGRESS_API_ROUTE, {
+      ...init,
+      // Which account's folder to use. The server refuses the request outright
+      // without it rather than falling back to a folder everyone shares.
+      headers: { ...init.headers, [PROGRESS_OWNER_HEADER]: owner },
+    });
   } catch {
     // No server listening at all — a static build, or the dev server stopped.
     throw new ProgressApiUnavailableError();

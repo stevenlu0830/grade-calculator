@@ -15,14 +15,20 @@ import {
 /**
  * Drives Save Progress and Reload Progress.
  *
- * Both go straight to `progresses/` with no prompt, via the dev server. If no
- * server is answering — a static build — they degrade to a download and a
- * manual file picker rather than failing.
+ * Both go straight to the signed-in account's own folder under `progresses/`
+ * with no prompt, via the dev server. If no server is answering — a static
+ * build — they degrade to a download and a manual file picker rather than
+ * failing; there, the file lands in whoever's Downloads folder, so it is
+ * already per-person without the server's help.
+ *
+ * `owner` is the account id, and it is what keeps two students on one dev
+ * server out of each other's files.
  *
  * Courses and semesters arrive separately rather than as one object, so the
  * callbacks aren't rebuilt on every render by a fresh wrapper.
  */
 export function useProgressFile(
+  owner: string,
   courses: Course[],
   semesters: string[],
   onLoad: (data: GradeData) => void
@@ -34,7 +40,10 @@ export function useProgressFile(
     // UI", so deleting every course and saving must leave the folder empty
     // rather than quietly keeping the previous files.
     try {
-      const { directory, written, removed } = await saveProgressToServer({ courses, semesters });
+      const { directory, written, removed } = await saveProgressToServer(owner, {
+        courses,
+        semesters,
+      });
       // The manifest is always written; it isn't a course, so it isn't news.
       const savedCourses = written.filter(name => !isManifestFile(name));
 
@@ -62,11 +71,11 @@ export function useProgressFile(
       console.error('Save progress failed:', error);
       toast.error(`Could not write to ${PROGRESS_DIRECTORY_NAME}/.`);
     }
-  }, [courses, semesters]);
+  }, [owner, courses, semesters]);
 
   const reloadProgress = useCallback(async () => {
     try {
-      reportLoad(await loadProgressFromServer(), onLoad);
+      reportLoad(await loadProgressFromServer(owner), onLoad);
     } catch (error) {
       if (error instanceof ProgressApiUnavailableError) {
         inputRef.current?.click(); // Fall back to picking the files by hand.
@@ -75,7 +84,7 @@ export function useProgressFile(
       console.error('Reload progress failed:', error);
       toast.error(`Could not read ${PROGRESS_DIRECTORY_NAME}/.`);
     }
-  }, [onLoad]);
+  }, [owner, onLoad]);
 
   /** Fallback path: the student selected one or more JSON files themselves. */
   const handleFileChange = useCallback(

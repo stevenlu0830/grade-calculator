@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Course, Breakdown, GradeData, SubBreakdown } from '@/types/grades';
-import { CourseStorage, EMPTY_GRADE_DATA, localCourseStorage } from '@/lib/courseStorage';
+import { CourseStorage, EMPTY_GRADE_DATA } from '@/lib/courseStorage';
 import { nextSubBreakdownName } from '@/lib/breakdownPresets';
 import { GradingPolicy } from '@/lib/gradePolicies';
 import { UNASSIGNED_SEMESTER, persistedSemesters } from '@/lib/semesters';
@@ -81,8 +81,12 @@ const asError = (error: unknown): Error =>
  * `storage` must keep a stable identity across renders — it's an effect
  * dependency, so a fresh object every render would reload in a loop. Build it
  * with `useAccountStorage`, or hoist it to a module constant.
+ *
+ * Required rather than defaulting to browser storage: every caller is inside the
+ * signed-in tree, and a silent fallback would write one student's courses to a
+ * key the whole browser shares.
  */
-export function useGradeStore(storage: CourseStorage = localCourseStorage) {
+export function useGradeStore(storage: CourseStorage) {
   // Starts empty and is replaced by the load below. Nothing renders the courses
   // while `isLoading` holds, so the placeholder is never mistaken for "no
   // courses yet".

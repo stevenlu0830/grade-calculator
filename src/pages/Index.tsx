@@ -52,7 +52,6 @@ const Index = ({ storage, user }: IndexProps) => {
   } = useGradeStore(storage);
 
   const { candidate: localData, dismiss: dismissImport } = useLocalDataImport(
-    user.id,
     !isLoading && !loadError,
     courses.length === 0 && savedSemesters.length === 0
   );
@@ -75,6 +74,7 @@ const Index = ({ storage, user }: IndexProps) => {
   };
 
   const { inputRef, saveProgress, reloadProgress, handleFileChange } = useProgressFile(
+    user.id,
     courses,
     savedSemesters,
     importData

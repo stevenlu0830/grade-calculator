@@ -25,6 +25,16 @@ export const EMPTY_GRADE_DATA: GradeData = { courses: [], semesters: [] };
 export const STORAGE_KEY = 'ubc-grade-calculator-data';
 
 /**
+ * Where the pre-accounts payload is parked once the import offer is answered.
+ *
+ * Kept rather than deleted, because the offer is answered before the imported
+ * courses have reached the account, and "Start fresh" is one careless click.
+ * Nothing in the app reads this key — it exists so a wrong answer is recoverable
+ * by hand instead of gone.
+ */
+export const RETIRED_STORAGE_KEY = 'ubc-grade-calculator-data-retired';
+
+/**
  * Bumped whenever the persisted shape changes; see `migrate`.
  *
  * 1 → bare `Course[]` using "component" wording, `grade` as a percentage.
@@ -213,4 +223,34 @@ export function readLocalData(): GradeData {
 export function hasLocalData(): boolean {
   const { courses, semesters } = readLocalData();
   return courses.length > 0 || semesters.length > 0;
+}
+
+/**
+ * Ends the one-time migration out of browser storage, for good.
+ *
+ * The saved payload predates accounts, so it belongs to no user in particular:
+ * leaving it in place after the offer is answered means the next student to sign
+ * in on this browser is offered someone else's courses. Retiring it is what
+ * stops the question being asked a second time.
+ *
+ * Idempotent, and silent on failure — the only cost of not retiring is being
+ * asked again, which is not worth taking the app down for.
+ */
+export function retireLocalData(): void {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === null) return;
+
+    try {
+      localStorage.setItem(RETIRED_STORAGE_KEY, saved);
+    } catch {
+      // Out of quota, most likely. Keeping a recoverable copy is a courtesy;
+      // being asked the same question forever is not, so the removal below
+      // happens either way.
+    }
+
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.error('Failed to retire pre-account data:', error);
+  }
 }

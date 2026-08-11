@@ -3,8 +3,10 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  isSafeOwnerId,
   isSafeProgressFileName,
   listProgressFiles,
+  resolveOwnerDirectory,
   resolveProgressPath,
   writeProgressFiles,
 } from '../../vite-plugin-progress-files';
@@ -185,6 +187,116 @@ describe('writeProgressFiles against a real folder', () => {
 
   it('lists nothing when the folder does not exist', async () => {
     expect(await listProgressFiles(path.join(dir, 'missing'))).toEqual([]);
+  });
+});
+
+describe('isSafeOwnerId', () => {
+  it('accepts a Supabase user id', () => {
+    expect(isSafeOwnerId('8f14e45f-ceea-467a-9575-3f0f4b0a2c11')).toBe(true);
+  });
+
+  it('rejects an empty id, so a missing header can never name a folder', () => {
+    expect(isSafeOwnerId('')).toBe(false);
+  });
+
+  it('rejects traversal and separators', () => {
+    expect(isSafeOwnerId('..')).toBe(false);
+    expect(isSafeOwnerId('../../etc')).toBe(false);
+    expect(isSafeOwnerId('a/b')).toBe(false);
+    expect(isSafeOwnerId('a\\b')).toBe(false);
+    expect(isSafeOwnerId('a.b')).toBe(false);
+    expect(isSafeOwnerId('bad\0id')).toBe(false);
+  });
+
+  it('rejects an id too long to be a real one', () => {
+    expect(isSafeOwnerId('a'.repeat(65))).toBe(false);
+  });
+});
+
+describe('resolveOwnerDirectory', () => {
+  it('gives each account its own folder under the base', () => {
+    expect(resolveOwnerDirectory(DIR, 'user-1')).toBe(path.join(DIR, 'user-1'));
+    expect(resolveOwnerDirectory(DIR, 'user-2')).toBe(path.join(DIR, 'user-2'));
+  });
+
+  it('refuses to resolve anything outside the base', () => {
+    expect(resolveOwnerDirectory(DIR, '..')).toBeNull();
+    expect(resolveOwnerDirectory(DIR, '../../tmp')).toBeNull();
+    expect(resolveOwnerDirectory(DIR, '')).toBeNull();
+  });
+});
+
+/**
+ * The guarantee the whole per-owner folder scheme exists for.
+ *
+ * Saving is a mirror — it deletes files whose course is gone — so these run
+ * against a real folder rather than a mock: the failure being guarded against
+ * is one save deleting another account's files off the disk.
+ */
+describe('two accounts on one dev server', () => {
+  let base: string;
+
+  const makeCourse = (name: string): Course => ({
+    id: `id-${name}`,
+    name,
+    semester: '2026 Winter Term 1',
+    breakdowns: [],
+  });
+
+  const saveAs = (owner: string, courses: Course[]) => {
+    const dir = resolveOwnerDirectory(base, owner);
+    if (dir === null) throw new Error(`unsafe owner in test: ${owner}`);
+    return writeProgressFiles(dir, buildProgressFiles({ courses, semesters: [] }));
+  };
+
+  const reloadAs = async (owner: string) => {
+    const dir = resolveOwnerDirectory(base, owner);
+    if (dir === null) throw new Error(`unsafe owner in test: ${owner}`);
+    return parseProgressFiles(await listProgressFiles(dir));
+  };
+
+  beforeEach(async () => {
+    base = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'progress-')), 'progresses');
+  });
+
+  afterEach(async () => {
+    await fs.rm(path.dirname(base), { recursive: true, force: true });
+  });
+
+  it('each reloads their own courses', async () => {
+    await saveAs('user-1', [makeCourse('CPSC 330')]);
+    await saveAs('user-2', [makeCourse('BIOL 200')]);
+
+    expect((await reloadAs('user-1')).courses.map(c => c.name)).toEqual(['CPSC 330']);
+    expect((await reloadAs('user-2')).courses.map(c => c.name)).toEqual(['BIOL 200']);
+  });
+
+  it('one account saving does not delete the other account’s files', async () => {
+    await saveAs('user-1', [makeCourse('CPSC 330'), makeCourse('MATH 200')]);
+
+    // Saving prunes files for courses that no longer exist. Under one shared
+    // folder this call is what wiped user 1's save.
+    const result = await saveAs('user-2', [makeCourse('BIOL 200')]);
+
+    expect(result.removed).toEqual([]);
+    expect((await reloadAs('user-1')).courses).toHaveLength(2);
+  });
+
+  it('clearing every course empties only that account’s folder', async () => {
+    await saveAs('user-1', [makeCourse('CPSC 330')]);
+    await saveAs('user-2', [makeCourse('BIOL 200')]);
+
+    await saveAs('user-2', []);
+
+    expect((await reloadAs('user-2')).courses).toEqual([]);
+    expect((await reloadAs('user-1')).courses.map(c => c.name)).toEqual(['CPSC 330']);
+  });
+
+  it('a new account reloads nothing rather than someone else’s courses', async () => {
+    await saveAs('user-1', [makeCourse('CPSC 330')]);
+
+    // user-3 has never saved, so their folder does not exist yet.
+    expect((await reloadAs('user-3')).courses).toEqual([]);
   });
 });
 
