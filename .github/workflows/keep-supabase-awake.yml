@@ -1,0 +1,72 @@
+# Keeps the Supabase project from being paused for inactivity.
+#
+# The free tier pauses a project after 7 days with no requests, which is a poor
+# fit for a grade calculator: it gets used hard around midterms and finals, then
+# ignored for weeks. A paused project accepts no reads or writes, so the app
+# looks broken until someone restores it from the dashboard. This run is the
+# cheapest way to keep the clock from ever reaching 7 days.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # 06:00 UTC on Mondays and Thursdays. The longest gap is 4 days (Thu → Mon),
+    # leaving 3 days of slack — GitHub delays scheduled runs when the shared
+    # runners are busy, and a keep-alive that only just fits the window would
+    # eventually miss it.
+    - cron: "0 6 * * 1,4"
+
+  # Run it from the Actions tab to confirm the secrets are right, instead of
+  # waiting until Monday to discover they aren't.
+  workflow_dispatch:
+
+# No repository contents are read and nothing is written back, so the job needs
+# no permissions at all.
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query the database
+        env:
+          # Deliberately not the VITE_ names used in .env.local — that prefix is
+          # Vite's marker for "inline this into the browser bundle", and nothing
+          # here is built by Vite. Set both under Settings → Secrets and
+          # variables → Actions.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          # Checked separately because an unset secret makes curl fail against a
+          # malformed URL, and "000" is a confusing way to learn a secret is
+          # missing.
+          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_ANON_KEY}" ]; then
+            echo "::error::Set the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets."
+            exit 1
+          fi
+
+          # A real SELECT against a real table, because a request that never
+          # reaches Postgres is not the kind of activity the timer watches.
+          # Row-level security answers an anonymous caller with an empty array,
+          # which is the expected result — the query ran, and no data leaves the
+          # project. --output discards the body so a future policy change can
+          # never spill rows into a public build log.
+          status=$(curl --silent --show-error \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --max-time 30 \
+            --retry 3 --retry-delay 5 --retry-connrefused \
+            --header "apikey: ${SUPABASE_ANON_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/rest/v1/user_data?select=user_id&limit=1")
+
+          # Fail loudly on anything else — an already-paused project, a rotated
+          # key, a typo'd URL. A keep-alive that quietly stopped working is
+          # worse than none, because it removes the reason to check.
+          if [ "${status}" != "200" ]; then
+            echo "::error::Expected HTTP 200 from Supabase, got ${status}."
+            exit 1
+          fi
+
+          echo "Supabase answered 200 — inactivity timer reset."
