@@ -1,11 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { startedInPasswordRecovery, supabase } from '@/lib/supabase';
 
 export interface SessionState {
   session: Session | null;
   /** True until the stored session has been read; neither signed in nor out yet. */
   isLoading: boolean;
+  /**
+   * True from a click on a password-reset link until the new password is saved.
+   *
+   * Separate from `session` because that link produces a perfectly ordinary
+   * session — the distinction it carries is only in the URL it arrived on.
+   */
+  isRecoveringPassword: boolean;
+  /** Leaves recovery: the password was changed, or the student backed out. */
+  endPasswordRecovery: () => void;
 }
 
 /**
@@ -18,6 +27,10 @@ export interface SessionState {
 export function useSession(): SessionState {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Seeded from the URL the page was opened on rather than waiting for the event
+  // below, so the grade sheet never flashes up in front of a student who asked
+  // to reset their password. See src/lib/authCallback.ts.
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(startedInPasswordRecovery);
 
   useEffect(() => {
     if (!supabase) {
@@ -36,8 +49,13 @@ export function useSession(): SessionState {
     // Covers sign in, sign out, token refresh and changes made in another tab.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, next) => {
+    } = supabase.auth.onAuthStateChange((event, next) => {
       if (cancelled) return;
+      // The seeded value above normally wins the race to this, but not when the
+      // client is slow enough to read the fragment after the first render, and
+      // not at all when the reset link is opened in a tab already running the
+      // app — there, this event is the only notice we get.
+      if (event === 'PASSWORD_RECOVERY') setIsRecoveringPassword(true);
       setSession(next);
       setIsLoading(false);
     });
@@ -48,5 +66,7 @@ export function useSession(): SessionState {
     };
   }, []);
 
-  return { session, isLoading };
+  const endPasswordRecovery = useCallback(() => setIsRecoveringPassword(false), []);
+
+  return { session, isLoading, isRecoveringPassword, endPasswordRecovery };
 }

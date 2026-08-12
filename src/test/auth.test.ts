@@ -1,5 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import { MIN_PASSWORD_LENGTH, describeAuthError, validateCredentials } from '@/lib/auth';
+import {
+  MIN_PASSWORD_LENGTH,
+  describeAuthError,
+  validateCredentials,
+  validateEmail,
+  validatePassword,
+} from '@/lib/auth';
+
+describe('validateEmail', () => {
+  it('accepts an address', () => {
+    expect(validateEmail('a@b.com')).toBeNull();
+  });
+
+  it('rejects one that is only whitespace', () => {
+    expect(validateEmail('   ')).toMatch(/email/i);
+  });
+});
+
+describe('validatePassword', () => {
+  it('accepts one at the minimum length', () => {
+    expect(validatePassword('x'.repeat(MIN_PASSWORD_LENGTH))).toBeNull();
+  });
+
+  it('rejects one below the server minimum before the round trip', () => {
+    expect(validatePassword('x'.repeat(MIN_PASSWORD_LENGTH - 1))).toMatch(/at least/i);
+  });
+
+  it('only compares the confirmation when one was given', () => {
+    // The reset form repeats the password; the sign in form doesn't.
+    expect(validatePassword('hunter2')).toBeNull();
+    expect(validatePassword('hunter2', 'hunter3')).toMatch(/match/i);
+    expect(validatePassword('hunter2', 'hunter2')).toBeNull();
+  });
+});
 
 describe('validateCredentials', () => {
   it('accepts a valid sign in', () => {
@@ -44,6 +77,29 @@ describe('describeAuthError', () => {
 
   it('names the connection when the request never landed', () => {
     expect(describeAuthError(new TypeError('Failed to fetch'))).toMatch(/connection/i);
+  });
+
+  it('turns a lapsed recovery session into the thing to do about it', () => {
+    // What `updateUser` says when the reset link expired under the open form.
+    expect(describeAuthError(new Error('Auth session missing!'))).toMatch(/expired/i);
+  });
+
+  it('explains a rejected password reuse', () => {
+    expect(
+      describeAuthError(new Error('New password should be different from the old password.'))
+    ).toMatch(/haven’t used/i);
+  });
+
+  it('reads the resend cooldown as the rate limit it is', () => {
+    expect(
+      describeAuthError(new Error('For security purposes, you can only request this after 51 seconds.'))
+    ).toMatch(/wait a minute/i);
+  });
+
+  it('sends an invalid email link back for a fresh one', () => {
+    expect(describeAuthError(new Error('Email link is invalid or has expired'))).toMatch(
+      /request a new one/i
+    );
   });
 
   it('passes an unrecognised message through rather than hiding it', () => {

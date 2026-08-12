@@ -12,6 +12,7 @@ import { isSupabaseConfigured } from "@/lib/supabase";
 import Auth from "./pages/Auth";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -23,7 +24,7 @@ const queryClient = new QueryClient();
  * a user id, and there isn't one until this component says there is.
  */
 function AuthGate() {
-  const { session, isLoading } = useSession();
+  const { session, isLoading, isRecoveringPassword, endPasswordRecovery } = useSession();
 
   // Checked before the session, since without a client there can never be one.
   if (!isSupabaseConfigured) return <SupabaseSetupNotice />;
@@ -31,6 +32,11 @@ function AuthGate() {
   // A persisted session may need its token refreshed first. Rendering the login
   // screen during that window would sign the student out on every reload.
   if (isLoading) return <FullPageLoader label="Loading your account…" />;
+
+  // Ahead of the session check, deliberately. A password-reset link signs the
+  // student in on the way through, so asking about the session first would hand
+  // them their courses with the password they came here to change still unset.
+  if (isRecoveringPassword) return <ResetPassword onDone={endPasswordRecovery} />;
 
   if (!session) return <Auth />;
 

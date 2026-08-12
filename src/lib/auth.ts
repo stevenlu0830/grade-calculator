@@ -3,6 +3,22 @@ import { requireSupabase } from '@/lib/supabase';
 /** Supabase's own minimum. Checked here so a typo doesn't cost a round trip. */
 export const MIN_PASSWORD_LENGTH = 6;
 
+/**
+ * Where Supabase should return the student after they click a link in an email.
+ *
+ * Read off the live page instead of an environment variable so that a Vercel
+ * preview deployment sends people back to itself: every branch gets its own
+ * hostname, and none of them is the project's configured Site URL. Left
+ * `undefined` outside a browser, where Supabase then falls back to Site URL.
+ *
+ * This is not an open redirect. Supabase rejects any destination missing from
+ * the Redirect URLs allow-list in the dashboard, so the origin has to have been
+ * approved there before it will be honoured.
+ */
+function emailReturnUrl(): string | undefined {
+  return typeof window === 'undefined' ? undefined : window.location.origin;
+}
+
 export interface SignUpResult {
   /**
    * True when the project has email confirmation switched on, so no session was
@@ -35,13 +51,59 @@ export function describeAuthError(error: unknown): string {
   if (normalized.includes('password should be at least')) {
     return `Passwords must be at least ${MIN_PASSWORD_LENGTH} characters.`;
   }
-  if (normalized.includes('rate limit') || normalized.includes('too many requests')) {
+  // Both of these arrive on the reset screen. The first is what Supabase says
+  // when the recovery link's session has expired underneath the form, which
+  // reads as a bug unless it's rewritten into the thing to do about it.
+  if (normalized.includes('auth session missing')) {
+    return 'That reset link has expired. Request a new one and try again.';
+  }
+  if (normalized.includes('new password should be different')) {
+    return 'Choose a password you haven’t used here before.';
+  }
+  if (normalized.includes('email link is invalid or has expired')) {
+    return 'That link is invalid or has expired. Request a new one.';
+  }
+  // "For security purposes, you can only request this after 51 seconds" is the
+  // resend button's own rate limit, and says the same thing as the two below.
+  if (
+    normalized.includes('rate limit') ||
+    normalized.includes('too many requests') ||
+    normalized.includes('for security purposes')
+  ) {
     return 'Too many attempts. Wait a minute and try again.';
   }
   if (normalized.includes('failed to fetch') || normalized.includes('networkerror')) {
     return 'Could not reach the server. Check your connection.';
   }
   return message || 'Something went wrong. Try again.';
+}
+
+/**
+ * The email half on its own, for the forgot-password form, which asks for
+ * nothing else. Format is left to the `type="email"` input, which the browser
+ * checks before it will submit.
+ */
+export function validateEmail(email: string): string | null {
+  if (!email.trim()) return 'Enter your email address.';
+  return null;
+}
+
+/**
+ * The password half on its own, for the reset form, which has no email field —
+ * the recovery link already established who is asking.
+ *
+ * `confirmPassword` is only compared when one is given, so this covers the sign
+ * in form, which has a single password box, as well as the two that repeat it.
+ */
+export function validatePassword(password: string, confirmPassword?: string): string | null {
+  if (!password) return 'Enter a password.';
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `Passwords must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  if (confirmPassword !== undefined && password !== confirmPassword) {
+    return 'The two passwords don’t match.';
+  }
+  return null;
 }
 
 /**
@@ -55,15 +117,7 @@ export function validateCredentials(
   password: string,
   confirmPassword?: string
 ): string | null {
-  if (!email.trim()) return 'Enter your email address.';
-  if (!password) return 'Enter a password.';
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return `Passwords must be at least ${MIN_PASSWORD_LENGTH} characters.`;
-  }
-  if (confirmPassword !== undefined && password !== confirmPassword) {
-    return 'The two passwords don’t match.';
-  }
-  return null;
+  return validateEmail(email) ?? validatePassword(password, confirmPassword);
 }
 
 export async function signUpWithPassword(
@@ -73,6 +127,7 @@ export async function signUpWithPassword(
   const { data, error } = await requireSupabase().auth.signUp({
     email: email.trim(),
     password,
+    options: { emailRedirectTo: emailReturnUrl() },
   });
   if (error) throw error;
 
@@ -80,6 +135,45 @@ export async function signUpWithPassword(
   // same shape for an email that already exists, deliberately, so that this
   // screen can't be used to find out who has an account.
   return { needsEmailConfirmation: data.session === null };
+}
+
+/**
+ * Sends the confirmation email again, for the one that went to spam or never
+ * arrived. Supabase rate limits this per address; `describeAuthError` turns that
+ * refusal into the wait-and-retry message.
+ */
+export async function resendConfirmationEmail(email: string): Promise<void> {
+  const { error } = await requireSupabase().auth.resend({
+    type: 'signup',
+    email: email.trim(),
+    options: { emailRedirectTo: emailReturnUrl() },
+  });
+  if (error) throw error;
+}
+
+/**
+ * Starts a password reset. Succeeds whether or not the address has an account —
+ * Supabase deliberately doesn't say which, so the form can't be used to test
+ * who is registered, and the screen afterwards has to be worded to match.
+ */
+export async function sendPasswordResetEmail(email: string): Promise<void> {
+  const { error } = await requireSupabase().auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: emailReturnUrl(),
+  });
+  if (error) throw error;
+}
+
+/**
+ * Sets a new password for whoever the current session belongs to.
+ *
+ * The reset screen calls this holding the short-lived session the recovery link
+ * itself created, which is what proves the person at the keyboard can read that
+ * address. If the link has since expired, Supabase rejects it for want of a
+ * session rather than changing the wrong account's password.
+ */
+export async function updatePassword(password: string): Promise<void> {
+  const { error } = await requireSupabase().auth.updateUser({ password });
+  if (error) throw error;
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<void> {

@@ -1,6 +1,15 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
+ * Re-exported from here, rather than imported where it's used, to pin down when
+ * it runs. Those values are read off the URL fragment, and `createClient` below
+ * erases that fragment as soon as it has consumed it. An imported module is
+ * fully evaluated before the body of the module importing it, so putting the
+ * import here is what guarantees the fragment is read first.
+ */
+export { initialAuthLinkError, startedInPasswordRecovery } from '@/lib/authCallback';
+
+/**
  * The Supabase connection, and the single place the environment is read.
  *
  * Both values are safe in client code: the URL is public, and the anon key is a
