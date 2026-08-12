@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Eye, EyeOff } from 'lucide-react';
 
 /** How long a peek lasts before the field hides itself again. */
-export const REVEAL_DURATION_MS = 500;
+export const REVEAL_DURATION_MS = 250;
 
 interface PasswordInputProps {
   id: string;
