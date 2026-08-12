@@ -417,8 +417,12 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       variant: {
         default: "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        // Patched: the shadcn original wraps these tokens in `hsl(...)`, but the
+        // tokens in index.css are hexes now, and `hsl(#e5e7eb)` is invalid — the
+        // shadow silently disappears. Used bare instead. The CLI will revert
+        // this if sidebar.tsx is re-added; see CODEBASE_INDEX.md.
         outline:
-          "bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]",
+          "bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]",
       },
       size: {
         default: "h-8 text-sm",

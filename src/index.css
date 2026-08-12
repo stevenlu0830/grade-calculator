@@ -6,33 +6,33 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 230 25% 15%;
+    --background: #f6f7f9;
+    --foreground: #1d2030;
 
-    --card: 0 0% 100%;
-    --card-foreground: 230 25% 15%;
+    --card: #ffffff;
+    --card-foreground: #1d2030;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 230 25% 15%;
+    --popover: #ffffff;
+    --popover-foreground: #1d2030;
 
-    --primary: 230 65% 50%;
-    --primary-foreground: 0 0% 100%;
+    --primary: #2d48d2;
+    --primary-foreground: #ffffff;
 
-    --secondary: 220 15% 92%;
-    --secondary-foreground: 230 25% 25%;
+    --secondary: #e8eaee;
+    --secondary-foreground: #303550;
 
-    --muted: 220 15% 94%;
-    --muted-foreground: 220 10% 45%;
+    --muted: #edeff2;
+    --muted-foreground: #676f7e;
 
-    --accent: 168 65% 40%;
-    --accent-foreground: 0 0% 100%;
+    --accent: #24a88e;
+    --accent-foreground: #ffffff;
 
-    --destructive: 0 72% 55%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: #df3a3a;
+    --destructive-foreground: #ffffff;
 
-    --border: 220 15% 88%;
-    --input: 220 15% 88%;
-    --ring: 230 65% 50%;
+    --border: #dcdfe5;
+    --input: #dcdfe5;
+    --ring: #2d48d2;
 
     --radius: 0.625rem;
 
@@ -48,77 +48,77 @@
        already dark enough to read, so they're untouched. The `.dark` block below
        restores the full-brightness values, which is the pairing that works
        there. */
-    --grade-a: 120 100% 27%; /* #008A00 — A+, A */
-    --grade-a-minus: 83.6 100% 27%; /* #548A00 — A- */
-    --grade-b: 60 100% 24%; /* #7A7A00 — B+, B, B- */
-    --grade-c: 48.9 100% 27%; /* #8A7000 — C+, C, C- */
-    --grade-d: 24 100% 50%; /* #FF6600 — D */
-    --grade-f: 0 100% 50%; /* #FF0000 — F */
+    --grade-a: #00b400; /* A+, A */
+    --grade-a-minus: #7ecb01; /* A- */
+    --grade-b: #c0c000; /* B+, B, B- */
+    --grade-c: #e3b900; /* C+, C, C- */
+    --grade-d: #ff6600; /* D */
+    --grade-f: #ff0000; /* F */
 
     /* Warning */
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning: #f59f0a;
+    --warning-foreground: #ffffff;
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: #fafafa;
+    --sidebar-foreground: #3f3f46;
+    --sidebar-primary: #18181b;
+    --sidebar-primary-foreground: #fafafa;
+    --sidebar-accent: #f4f4f5;
+    --sidebar-accent-foreground: #18181b;
+    --sidebar-border: #e5e7eb;
+    --sidebar-ring: #3b82f6;
   }
 
   .dark {
-    --background: 230 25% 10%;
-    --foreground: 220 15% 95%;
+    --background: #131520;
+    --foreground: #f0f2f4;
 
-    --card: 230 20% 14%;
-    --card-foreground: 220 15% 95%;
+    --card: #1d1f2b;
+    --card-foreground: #f0f2f4;
 
-    --popover: 230 20% 14%;
-    --popover-foreground: 220 15% 95%;
+    --popover: #1d1f2b;
+    --popover-foreground: #f0f2f4;
 
-    --primary: 230 65% 60%;
-    --primary-foreground: 0 0% 100%;
+    --primary: #576ddb;
+    --primary-foreground: #ffffff;
 
-    --secondary: 230 15% 22%;
-    --secondary-foreground: 220 15% 90%;
+    --secondary: #303241;
+    --secondary-foreground: #e2e4e9;
 
-    --muted: 230 15% 20%;
-    --muted-foreground: 220 10% 55%;
+    --muted: #2b2e3b;
+    --muted-foreground: #818898;
 
-    --accent: 168 55% 50%;
-    --accent-foreground: 0 0% 100%;
+    --accent: #39c6aa;
+    --accent-foreground: #ffffff;
 
-    --destructive: 0 62% 45%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: #ba2c2c;
+    --destructive-foreground: #ffffff;
 
-    --border: 230 15% 22%;
-    --input: 230 15% 22%;
-    --ring: 230 65% 60%;
+    --border: #303241;
+    --input: #303241;
+    --ring: #576ddb;
 
     /* The full-brightness palette, which reads well on a dark card — the same
        hues the light theme darkens. Unreachable today (no theme provider mounts
        `.dark`), but this is the pairing to keep if one ever does. */
-    --grade-a: 120 100% 50%; /* #00FF00 */
-    --grade-a-minus: 83.6 100% 59.2%; /* #ADFF2F */
-    --grade-b: 60 100% 50%; /* #FFFF00 */
-    --grade-c: 48.9 100% 50%; /* #FFD000 */
-    --grade-d: 24 100% 50%; /* #FF6600 */
-    --grade-f: 0 100% 50%; /* #FF0000 */
+    --grade-a: #00ff00; /* A+, A */
+    --grade-a-minus: #adff2f; /* A- */
+    --grade-b: #ffff00; /* B+, B, B- */
+    --grade-c: #ffd000; /* C+, C, C- */
+    --grade-d: #ff6600; /* D */
+    --grade-f: #ff0000; /* F */
 
-    --warning: 38 85% 55%;
-    --warning-foreground: 0 0% 100%;
+    --warning: #eea62b;
+    --warning-foreground: #ffffff;
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: #18181b;
+    --sidebar-foreground: #f4f4f5;
+    --sidebar-primary: #1d4ed8;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #27272a;
+    --sidebar-accent-foreground: #f4f4f5;
+    --sidebar-border: #27272a;
+    --sidebar-ring: #3b82f6;
   }
 }
 

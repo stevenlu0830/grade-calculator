@@ -23,7 +23,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Language | TypeScript 5.8 | `strict: false` — see §9 |
 | UI | React 18 | No Suspense, no server components |
 | Routing | react-router-dom 6 | Two routes; effectively a single page |
-| Styling | Tailwind 3 + CSS variables | shadcn/ui `default` style, slate base |
+| Styling | Tailwind 3 + CSS variables | shadcn/ui `default` style, slate base; tokens are hex, bridged by `token()` (§7) |
 | Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
 | Auth & data | Supabase (`@supabase/supabase-js` 2) | Email + password; one `jsonb` row per user, guarded by RLS (§5a) |
@@ -352,6 +352,21 @@ Progress-file handling lives in [useProgressFile](src/hooks/useProgressFile.ts) 
 
 The pinned header is `sticky -top-3`, cancelling `<main>`'s `pt-3`: at plain `top-0` it pins *below* that padding and rows scroll visibly through the strip above it. It carries `bg-card` under its gradient so the rows can't show through, and the row of cards is `items-start` so a short card ends where its content does and unpins with it.
 
+**Colour tokens are plain hexes, bridged into Tailwind by `token()`.** Every colour lives in [index.css](src/index.css) as `--card: #ffffff` — the format anyone can read, paste into a picker, or match against a design — for both `:root` and `.dark`. The usual shadcn arrangement stores a bare HSL triple (`0 0% 100%`) precisely so `hsl(var(--card) / 0.8)` can add an alpha, which a hex cannot do; `token()` in [tailwind.config.ts](tailwind.config.ts) buys that back:
+
+```ts
+bg-card      →  background-color: var(--card)
+bg-card/80   →  background-color: color-mix(in srgb, var(--card) calc(.8 * 100%), transparent)
+```
+
+Three things hold it together, and each is load-bearing:
+
+- **Map new colours with `token("--x")`, never `"var(--x)"`.** A bare var compiles fine and then silently ignores every `/N` modifier — the tint renders at full opacity, which turns a 10% wash into a solid block of colour.
+- **Tailwind 2's `*-opacity-*` core plugins are off.** Left on, they route *every* colour utility through `--tw-bg-opacity`, so even a plain `bg-card` would compile to a `color-mix`. They're unused here anyway; `bg-card/80` is the replacement.
+- **`color-mix` is the floor.** Chrome 111+, Safari 16.2+, Firefox 113+ (all 2023). Plain colours don't need it; only the `/N` tints do.
+
+`sidebar.tsx` is patched for the same reason — its `shadow-[…hsl(var(--sidebar-border))]` would resolve to `hsl(#e5e7eb)` and drop the shadow. It's the second vendored file with a local edit, after `select.tsx`.
+
 **AdvancedOptions** holds no rules of its own. It's a controlled field group over a `PolicyDraft`, whose committed form a `Breakdown` satisfies structurally. It reads `getActiveAdvancedOption(policy)` for the current mode and calls `advancedOptionUpdate(option)` to switch, so "drop wins over downweight" and "enabling one clears the other" are defined once in `gradePolicies` and shared with the calculator. Each switch is disabled while the other is active, and `AdvancedOption` is never persisted.
 
 Because it works on a bare policy, the same component serves two places:
@@ -436,7 +451,7 @@ Ordered roughly by how likely each is to bite you.
 - **New route:** add `<Route>` in `App.tsx` above the `*` catch-all, create the page in `src/pages/`.
 - **Deeper store access:** convert `useGradeStore` into a Context provider rather than calling the hook twice (§5).
 - **New UI primitive:** `npx shadcn@latest add <name>` — never hand-write into `src/components/ui/`.
-- **New semantic color:** HSL var in both `:root` and `.dark` in `index.css`, then map it in `tailwind.config.ts`. For a *grade* colour, add the class strings to the `LETTER_SCALE` row that uses them — spelled out as literals, since Tailwind only ships classes it can find by scanning.
+- **New semantic color:** hex var in both `:root` and `.dark` in `index.css`, then map it in `tailwind.config.ts` as `token("--your-var")` — a bare `"var(--your-var)"` compiles, but silently ignores every `/N` opacity modifier. For a *grade* colour, add the class strings to the `LETTER_SCALE` row that uses them — spelled out as literals, since Tailwind only ships classes it can find by scanning.
 - **New export format:** write a pure `build…` function, then a wrapper that calls `downloadBlob` with `timestampedFilename`. Keep the wrapper too small to need a test.
 - **Replacing the favicon:** drop the file in `public/`, point the `<link rel="icon">` at it, and bump the `?v=` query — otherwise browsers keep serving the cached one.
 - **Another storage backend:** implement `CourseStorage` (async `load`/`save`) and pass it to `useGradeStore` — the store depends on the interface, not on any one backend. Wrap it in `debouncedStorage` if writes cost anything, and give it a stable identity (§5).
@@ -497,6 +512,8 @@ Ordered roughly by how likely each is to bite you.
 | Two parts of the UI disagree about state | A second `useGradeStore()` call created a rival store (§5) | grep `useGradeStore` — must appear once |
 | Delete does nothing on a sub-breakdown | It's the last one; deletion is blocked by design | [useGradeStore.ts](src/hooks/useGradeStore.ts), `deleteSubBreakdown` |
 | Dark styles never apply | No `ThemeProvider` mounts; `.dark` is never added (§9) | `App.tsx` |
+| A `/N` tint renders solid, or a colour vanishes | The token was mapped as a bare `var(--x)` instead of `token("--x")` (§7) | [tailwind.config.ts](tailwind.config.ts) |
+| Colours are missing on an old browser | `color-mix` backs every `/N` tint; it needs Chrome 111+, Safari 16.2+, Firefox 113+ (§7) | [tailwind.config.ts](tailwind.config.ts) |
 
 ## 12. Glossary
 

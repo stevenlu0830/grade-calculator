@@ -20,7 +20,7 @@
 | Change how files reach disk | [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts) |
 | Change the add-course / add-breakdown dialogs | [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx), [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) |
 | Change page layout / header | [src/pages/Index.tsx](src/pages/Index.tsx), [src/components/CourseToolbar.tsx](src/components/CourseToolbar.tsx) |
-| Change colours or animations | [src/index.css](src/index.css), [tailwind.config.ts](tailwind.config.ts) |
+| Change colours or animations | [src/index.css](src/index.css) (hex vars), [tailwind.config.ts](tailwind.config.ts) (`token()` mapping) |
 | Change which panel scrolls, or the pinned course header | [src/pages/Index.tsx](src/pages/Index.tsx), [src/components/CourseSection.tsx](src/components/CourseSection.tsx) |
 
 ## Layering
@@ -228,7 +228,8 @@ shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
 
 ## Styling
 
-- [src/index.css](src/index.css) — Tailwind layers, Google Fonts import, all HSL vars for `:root` and `.dark` including `--grade-*`, the `.grade-display` utility, and the rule hiding number-input spinner arrows.
+- [src/index.css](src/index.css) — Tailwind layers, Google Fonts import, every colour var for `:root` and `.dark` (plain **hex**, including `--grade-*`), the `.grade-display` utility, and the rule hiding number-input spinner arrows.
+- [tailwind.config.ts](tailwind.config.ts) — maps each var through the local `token()` helper, which emits a bare `var(--x)` normally and a `color-mix` when a `/N` opacity modifier is used (a hex can't carry an alpha). Tailwind 2's `*-opacity-*` plugins are switched off so plain utilities stay plain. Add a colour with `token("--your-var")`, never a raw `"var(--your-var)"`.
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 

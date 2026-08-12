@@ -63,7 +63,7 @@ pages / components  →  hooks  →  lib  →  types
 
 - Tailwind utilities inline. No CSS modules, no styled-components, no new `.css` files.
 - Semantic tokens only — `bg-background`, `text-muted-foreground`, `border-border`, `text-grade-a-minus`. **Never** raw colors like `text-red-500`.
-- New colors: add an HSL var to both `:root` and `.dark` in `src/index.css`, then map it in `tailwind.config.ts`.
+- New colors: add a **hex** var to both `:root` and `.dark` in `src/index.css`, then map it in `tailwind.config.ts` with `token("--your-var")` — never a bare `"var(--your-var)"`, which silently drops the alpha from `/N` utilities. Hex because it's the format anyone can read and paste into a picker; `token()` is what keeps `bg-x/80` working on one (see its comment).
 - Grade colours belong to the letter, not to a percentage block: they live on the `LETTER_SCALE` rows in `gradeFormatting.ts`, spelled out as literal class strings so Tailwind can find them. Don't build one by interpolation.
 - Conditional classes use `cn()` from `@/lib/utils`; template literals are acceptable for a single toggle.
 - Numeric values get `font-mono`; the `.grade-display` utility adds `tabular-nums`.
@@ -71,7 +71,7 @@ pages / components  →  hooks  →  lib  →  types
 
 ## UI kit
 
-- `src/components/ui/*` is vendored shadcn. Don't hand-edit — add via `npx shadcn@latest add <name>` and compose wrappers instead. The one exception is `select.tsx`, patched to stop long dropdowns overflowing the window; if you must patch another, comment why inline and note it in CODEBASE_INDEX.md, since the CLI will revert it.
+- `src/components/ui/*` is vendored shadcn. Don't hand-edit — add via `npx shadcn@latest add <name>` and compose wrappers instead. Two files are patched: `select.tsx`, to stop long dropdowns overflowing the window, and `sidebar.tsx`, whose `hsl(var(--sidebar-*))` shadows no longer match the hex tokens. If you must patch another, comment why inline and note it in CODEBASE_INDEX.md, since the CLI will revert it.
 - Dialogs that create something wrap their fields in a `<form>` with a `type="submit"` confirm button, so Return works.
 - A dialog that *edits* existing data holds a draft and commits on Apply, so Cancel truly discards. Seed the draft at mount in an inner component `key`ed on `open` — not from an effect depending on the data, and not by trusting Radix to unmount on close.
 - Numeric fields in a draft hold **raw text**, so a box can be emptied and retyped. Parse, clamp and default on commit, never per keystroke, and reject blanks there with a message rather than inventing a value. See `PolicyDraft` in `gradePolicies.ts`.

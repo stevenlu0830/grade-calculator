@@ -1,5 +1,27 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * A colour token from `src/index.css`, wired so Tailwind's `/N` opacity
+ * modifiers keep working.
+ *
+ * The tokens hold plain hexes (`#2d48d2`), which is the format anyone can read
+ * and paste into a colour picker — but CSS can't add an alpha to a hex, so
+ * `bg-card/80` can't be `hsl(var(--card) / 0.8)` the way it was. `color-mix`
+ * against `transparent` does the same job on any colour format.
+ *
+ * Tailwind calls this with no argument for the plain utility (`bg-card`), and
+ * with the modifier for `/N` (`bg-card/80` → `opacityValue: "0.8"`), so a plain
+ * utility still compiles to a bare `var(--card)` — only the tinted ones pay for
+ * `color-mix`. The legacy `bg-opacity-*` plugins are off (see `corePlugins`
+ * below), which is what keeps that true.
+ */
+const token =
+  (name: string) =>
+  ({ opacityValue }: { opacityValue?: string } = {}) =>
+    opacityValue === undefined
+      ? `var(${name})`
+      : `color-mix(in srgb, var(${name}) calc(${opacityValue} * 100%), transparent)`;
+
 export default {
   darkMode: ["class"],
   content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
@@ -18,60 +40,60 @@ export default {
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        border: token("--border"),
+        input: token("--input"),
+        ring: token("--ring"),
+        background: token("--background"),
+        foreground: token("--foreground"),
         primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
+          DEFAULT: token("--primary"),
+          foreground: token("--primary-foreground"),
         },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+          DEFAULT: token("--secondary"),
+          foreground: token("--secondary-foreground"),
         },
         destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
+          DEFAULT: token("--destructive"),
+          foreground: token("--destructive-foreground"),
         },
         muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: token("--muted"),
+          foreground: token("--muted-foreground"),
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: token("--accent"),
+          foreground: token("--accent-foreground"),
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: token("--popover"),
+          foreground: token("--popover-foreground"),
         },
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: token("--card"),
+          foreground: token("--card-foreground"),
         },
         warning: {
-          DEFAULT: "hsl(var(--warning))",
-          foreground: "hsl(var(--warning-foreground))",
+          DEFAULT: token("--warning"),
+          foreground: token("--warning-foreground"),
         },
         grade: {
-          a: "hsl(var(--grade-a))",
-          "a-minus": "hsl(var(--grade-a-minus))",
-          b: "hsl(var(--grade-b))",
-          c: "hsl(var(--grade-c))",
-          d: "hsl(var(--grade-d))",
-          f: "hsl(var(--grade-f))",
+          a: token("--grade-a"),
+          "a-minus": token("--grade-a-minus"),
+          b: token("--grade-b"),
+          c: token("--grade-c"),
+          d: token("--grade-d"),
+          f: token("--grade-f"),
         },
         sidebar: {
-          DEFAULT: "hsl(var(--sidebar-background))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          primary: "hsl(var(--sidebar-primary))",
-          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
-          accent: "hsl(var(--sidebar-accent))",
-          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
-          border: "hsl(var(--sidebar-border))",
-          ring: "hsl(var(--sidebar-ring))",
+          DEFAULT: token("--sidebar-background"),
+          foreground: token("--sidebar-foreground"),
+          primary: token("--sidebar-primary"),
+          "primary-foreground": token("--sidebar-primary-foreground"),
+          accent: token("--sidebar-accent"),
+          "accent-foreground": token("--sidebar-accent-foreground"),
+          border: token("--sidebar-border"),
+          ring: token("--sidebar-ring"),
         },
       },
       borderRadius: {
@@ -106,4 +128,16 @@ export default {
     },
   },
   plugins: [require("tailwindcss-animate")],
+  // Tailwind 2's separate opacity scales, superseded by the `/N` modifier and
+  // unused here. Off because they'd wrap *every* colour utility in the
+  // `--tw-*-opacity` variable, which for a hex token means routing even a plain
+  // `bg-card` through `color-mix`. Use `bg-card/80`, not `bg-card bg-opacity-80`.
+  corePlugins: {
+    backgroundOpacity: false,
+    textOpacity: false,
+    borderOpacity: false,
+    divideOpacity: false,
+    placeholderOpacity: false,
+    ringOpacity: false,
+  },
 } satisfies Config;
