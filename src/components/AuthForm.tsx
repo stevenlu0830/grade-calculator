@@ -10,6 +10,7 @@ import {
   validateEmail,
 } from '@/lib/auth';
 import { initialAuthLinkError } from '@/lib/supabase';
+import { PasswordInput } from '@/components/PasswordInput';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -208,11 +209,8 @@ export function AuthForm() {
               </button>
             )}
           </div>
-          <Input
+          <PasswordInput
             id="auth-password"
-            type="password"
-            // Tells a password manager whether to offer a saved password or a new
-            // one; getting this wrong is the usual reason they misbehave.
             autoComplete={mode === 'signUp' ? 'new-password' : 'current-password'}
             value={password}
             onChange={event => setPassword(event.target.value)}
@@ -229,9 +227,8 @@ export function AuthForm() {
       {mode === 'signUp' && (
         <div className="space-y-2">
           <Label htmlFor="auth-confirm-password">Confirm password</Label>
-          <Input
+          <PasswordInput
             id="auth-confirm-password"
-            type="password"
             autoComplete="new-password"
             value={confirmPassword}
             onChange={event => setConfirmPassword(event.target.value)}

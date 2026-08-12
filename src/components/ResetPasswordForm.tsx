@@ -7,8 +7,8 @@ import {
   validatePassword,
 } from '@/lib/auth';
 import { initialAuthLinkError } from '@/lib/supabase';
+import { PasswordInput } from '@/components/PasswordInput';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 
@@ -63,9 +63,8 @@ export function ResetPasswordForm({ onDone }: ResetPasswordFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="reset-password">New password</Label>
-        <Input
+        <PasswordInput
           id="reset-password"
-          type="password"
           autoComplete="new-password"
           autoFocus
           value={password}
@@ -77,9 +76,8 @@ export function ResetPasswordForm({ onDone }: ResetPasswordFormProps) {
 
       <div className="space-y-2">
         <Label htmlFor="reset-confirm-password">Confirm new password</Label>
-        <Input
+        <PasswordInput
           id="reset-confirm-password"
-          type="password"
           autoComplete="new-password"
           value={confirmPassword}
           onChange={event => setConfirmPassword(event.target.value)}
