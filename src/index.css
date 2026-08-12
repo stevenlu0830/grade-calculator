@@ -1,8 +1,12 @@
+/*
+ * Inter and JetBrains Mono — the families tailwind.config.ts asks for — are
+ * loaded by a <link> in index.html, not from here. An `@import` after the
+ * `@tailwind` directives below is stripped by PostCSS, and moving it above them
+ * would still block on the stylesheet being parsed first.
+ */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @layer base {
   :root {

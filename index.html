@@ -15,6 +15,23 @@
     <link rel="icon" type="image/png" href="/favicon.png?v=2" />
     <link rel="apple-touch-icon" href="/favicon.png?v=2" />
 
+    <!--
+      The two typefaces tailwind.config.ts names in `fontFamily`. They live here
+      rather than as an `@import` in index.css for two reasons: PostCSS drops an
+      `@import` that follows the `@tailwind` directives (it must precede every
+      other statement), which silently cost the production build its fonts; and
+      a link in the HTML is found during the initial parse, instead of after the
+      stylesheet has been fetched and parsed. The preconnects open the two
+      connections Google Fonts needs — the second is crossorigin because the
+      font files themselves are served from a different origin than the CSS.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+
     <meta property="og:title" content="UBC Grade Calculator" />
     <meta property="og:description" content="Track your UBC course grades with real-time calculations" />
     <meta property="og:type" content="website" />
