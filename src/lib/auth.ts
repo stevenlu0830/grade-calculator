@@ -79,6 +79,26 @@ export function describeAuthError(error: unknown): string {
 }
 
 /**
+ * Whether a failed sign in was refused *only* because the address was never
+ * confirmed — the account exists and the password was right.
+ *
+ * Separate from `describeAuthError` because this one changes what the screen
+ * offers, not just what it says. Someone who registered last week and lost the
+ * email has the right password and no way to use it; without this they read
+ * "confirm your email address first" on a form that can't send them another one.
+ *
+ * Matches Supabase's own `email_not_confirmed` code and the message it ships
+ * with, since the two have not always travelled together across versions.
+ */
+export function isEmailNotConfirmedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const code = (error as { code?: unknown } | null)?.code;
+  return (
+    code === 'email_not_confirmed' || message.toLowerCase().includes('email not confirmed')
+  );
+}
+
+/**
  * The email half on its own, for the forgot-password form, which asks for
  * nothing else. Format is left to the `type="email"` input, which the browser
  * checks before it will submit.

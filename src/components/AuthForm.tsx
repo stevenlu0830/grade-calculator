@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   MIN_PASSWORD_LENGTH,
   describeAuthError,
+  isEmailNotConfirmedError,
   resendConfirmationEmail,
   sendPasswordResetEmail,
   signInWithPassword,
@@ -43,8 +44,14 @@ const COPY = {
   },
 } as const satisfies Record<Mode, { switchTo: Mode; [key: string]: string }>;
 
-/** Which email went out, for the screen shown in place of the form afterwards. */
-type Notice = { kind: 'confirmEmail' | 'resetEmail'; email: string };
+/**
+ * Which email went out, for the screen shown in place of the form afterwards.
+ *
+ * `unconfirmed` is the same screen as `confirmEmail` with different wording: it
+ * is reached by signing in to an account registered earlier and never confirmed,
+ * where no new email has been sent yet and the resend button is the whole point.
+ */
+type Notice = { kind: 'confirmEmail' | 'resetEmail' | 'unconfirmed'; email: string };
 
 /**
  * Email and password sign in, registration, and starting a password reset.
@@ -101,7 +108,13 @@ export function AuthForm() {
         await signInWithPassword(email, password);
       }
     } catch (caught) {
-      setError(describeAuthError(caught));
+      // A sign in refused only for want of confirmation is a dead end on this
+      // form — the password was right and there is no resend button here.
+      if (mode === 'signIn' && isEmailNotConfirmedError(caught)) {
+        setNotice({ kind: 'unconfirmed', email: email.trim() });
+      } else {
+        setError(describeAuthError(caught));
+      }
     } finally {
       setIsPending(false);
     }
@@ -131,7 +144,10 @@ export function AuthForm() {
   };
 
   if (notice) {
-    const isConfirmation = notice.kind === 'confirmEmail';
+    // Both of these end at a confirmation link, so both offer the resend button.
+    const isConfirmation = notice.kind === 'confirmEmail' || notice.kind === 'unconfirmed';
+    // Only the registration path has actually sent one at this point.
+    const alreadySent = notice.kind !== 'unconfirmed';
     return (
       <div className="text-center animate-fade-in">
         <div className="mx-auto mb-4 w-fit rounded-2xl bg-muted p-4">
@@ -141,12 +157,22 @@ export function AuthForm() {
           {isConfirmation ? 'Confirm your email' : 'Check your inbox'}
         </h2>
         <p className="mb-6 text-sm text-muted-foreground">
-          We sent a link to <span className="font-medium text-foreground">{notice.email}</span>.{' '}
-          {isConfirmation
-            ? 'Click it, then come back and sign in.'
-            : // Worded to hold either way, because Supabase reports success for an
-              // address with no account and this screen must not give that away.
-              'If there’s an account for that address, the link in it will let you choose a new password.'}
+          {notice.kind === 'unconfirmed' ? (
+            <>
+              <span className="font-medium text-foreground">{notice.email}</span> hasn’t been
+              confirmed yet. Use the link we sent when you registered, or send a new one.
+            </>
+          ) : (
+            <>
+              We sent a link to{' '}
+              <span className="font-medium text-foreground">{notice.email}</span>.{' '}
+              {isConfirmation
+                ? 'Click it, then come back and sign in.'
+                : // Worded to hold either way, because Supabase reports success for an
+                  // address with no account and this screen must not give that away.
+                  'If there’s an account for that address, the link in it will let you choose a new password.'}
+            </>
+          )}
         </p>
 
         {error && (
@@ -163,7 +189,7 @@ export function AuthForm() {
             disabled={isPending || resent}
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {resent ? 'Email sent again' : 'Resend email'}
+            {resent ? 'Email sent again' : alreadySent ? 'Resend email' : 'Send a new link'}
           </Button>
         )}
 

@@ -49,7 +49,10 @@ Set up the database once:
    VITE_SUPABASE_URL=https://your-project-ref.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-key
    ```
-4. While you're in the dashboard, turn **Authentication → Sign In / Providers → Confirm email** *off*, so registering signs you straight in without waiting for a confirmation email.
+4. Decide how registration works, under **Authentication → Sign In / Providers → Confirm email**. Leave it **on** and new accounts get an email with a link they have to click first. Turn it **off** and registering signs you straight in, which is easier while you're just poking at it locally. The app handles both.
+5. If you left confirmation on, add the addresses the app runs at to **Authentication → URL Configuration → Redirect URLs** — at least `http://localhost:8080` plus wherever you deploy it. Links to an address that isn't listed get dropped, which looks like the email is broken.
+
+If you forked this on GitHub, do one more step. Supabase pauses a free project after 7 days with no activity, and this repo has a scheduled job that pings it twice a week to stop that. It needs its own copy of the two values, because secrets aren't carried over to a fork: go to **Settings → Secrets and variables → Actions** and add `SUPABASE_URL` and `SUPABASE_ANON_KEY` — the same values as above, but without the `VITE_` prefix. Skip this and you'll get a failed-job email every Monday and Thursday.
 
 Then start it:
 

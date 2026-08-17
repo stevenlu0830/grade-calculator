@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   MIN_PASSWORD_LENGTH,
   describeAuthError,
+  isEmailNotConfirmedError,
   validateCredentials,
   validateEmail,
   validatePassword,
@@ -57,6 +58,29 @@ describe('validateCredentials', () => {
     expect(validateCredentials('a@b.com', 'hunter2')).toBeNull();
     expect(validateCredentials('a@b.com', 'hunter2', 'hunter3')).toMatch(/match/i);
     expect(validateCredentials('a@b.com', 'hunter2', 'hunter2')).toBeNull();
+  });
+});
+
+describe('isEmailNotConfirmedError', () => {
+  it('matches the message Supabase ships', () => {
+    expect(isEmailNotConfirmedError(new Error('Email not confirmed'))).toBe(true);
+  });
+
+  it('matches on the error code alone, in case the message is reworded', () => {
+    expect(isEmailNotConfirmedError(Object.assign(new Error('nope'), {
+      code: 'email_not_confirmed',
+    }))).toBe(true);
+  });
+
+  it('leaves a wrong password on the sign in form', () => {
+    // The distinction that matters: this one must NOT offer to resend a
+    // confirmation, or the screen would claim the password was accepted.
+    expect(isEmailNotConfirmedError(new Error('Invalid login credentials'))).toBe(false);
+  });
+
+  it('survives a non-Error rejection', () => {
+    expect(isEmailNotConfirmedError(null)).toBe(false);
+    expect(isEmailNotConfirmedError('Email not confirmed')).toBe(true);
   });
 });
 

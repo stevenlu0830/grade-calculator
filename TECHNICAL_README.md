@@ -57,9 +57,22 @@ npm test       # vitest run
    ```
 4. Restart the dev server. Vite reads env files at startup.
 
-While developing, turn **Authentication → Sign In / Providers → Confirm email** *off* so registering signs you straight in. With it on, Supabase's built-in mailer is rate-limited to a handful of messages an hour — fine for you and a few friends, but a real deployment wants custom SMTP.
+**Authentication → Sign In / Providers → Confirm email** decides whether registration sends a confirmation link, and the app supports it either way (§5b). Turning it *off* while developing means registering signs you straight in, which is quicker; anything real wants it on.
 
 `.env.local` is gitignored by the existing `*.local` rule. Both values are safe in the browser regardless: the anon key is publishable, and RLS is what actually separates accounts (§5a).
+
+### 3a. Keep-alive secrets (forks and new clones)
+
+[.github/workflows/keep-supabase-awake.yml](.github/workflows/keep-supabase-awake.yml) pings the project twice a week so the free tier never reaches its 7-day inactivity pause. It needs the same two values as its own **repository** secrets, under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `SUPABASE_URL` | same as `VITE_SUPABASE_URL` |
+| `SUPABASE_ANON_KEY` | same as `VITE_SUPABASE_ANON_KEY` |
+
+Deliberately **without** the `VITE_` prefix — that prefix means "inline into the browser bundle", and nothing in this workflow is built by Vite. Secrets are not copied when a repo is forked, so a fork starts with none.
+
+Until they are set, every scheduled run fails with `Set the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets.` That guard is intentional: a keep-alive that failed silently would stop resetting the timer while still looking healthy, and the project would pause a week later. The same message appears when the values were added as *environment* secrets, or as organization secrets not shared with this repo — in both cases the job sees them as empty. Verify with **Actions → Keep Supabase awake → Run workflow** rather than waiting for the next Monday.
 
 `npm run dev` opens the OS default browser via Vite's `server.open`. Set `BROWSER=none npm run dev` to suppress it — useful in CI, or when an editor preview is already attached.
 
@@ -199,6 +212,23 @@ user_data(user_id uuid primary key references auth.users, version int, data json
 **Pre-accounts data isn't stranded.** [useLocalDataImport](src/hooks/useLocalDataImport.ts) offers the browser's old `localStorage` courses to an account that has none, once per user (the answer is remembered under `ubc-grade-calculator-local-import-offered:<userId>`). It deliberately never merges — it only fires when the account is empty, so there's no "which copy wins" question to get wrong.
 
 `progresses/` (§8) is unchanged and **per-machine, not per-account**: it's an export/backup mechanism, and it doesn't know who's signed in.
+
+### 5b. Email confirmation
+
+Whether registration sends a confirmation link is a **project setting**, not a code path: **Authentication → Sign In / Providers → Confirm email**. The app reads which way it is set rather than assuming, so both work without a rebuild.
+
+With it **on**, `signUp` returns a user but no session. `signUpWithPassword` reports that as `needsEmailConfirmation`, and [AuthForm](src/components/AuthForm.tsx) shows the "Confirm your email" screen in place of the form — otherwise a successful registration would look like nothing happened. With it **off**, a session comes back, `useSession` sees it, and the gate swaps in the grade sheet.
+
+Two things this has to get right, both covered in [authForm.test.tsx](src/test/authForm.test.tsx):
+
+- **Signing in to an account that was never confirmed** lands on that same screen, not on an error. Supabase refuses the sign in with `email_not_confirmed`, which means the password was *correct* — telling that student to "check your inbox" on a form with no resend button is a dead end if the original email is gone. `isEmailNotConfirmedError` is a separate predicate from `describeAuthError` for this reason: it changes what the screen *offers*, not just what it says.
+- **A wrong password must not reach that screen.** It would imply the password was accepted, and would turn the form into a way to test which addresses are registered.
+
+⚠️ The link's destination must be in **Authentication → URL Configuration → Redirect URLs**, or Supabase drops it and sends the student to Site URL. `emailReturnUrl()` sends `window.location.origin`, so every origin needs listing — production, `http://localhost:8080`, and a wildcard like `https://*-yourname.vercel.app` for previews. This being missing looks exactly like a broken link.
+
+⚠️ Supabase's built-in mailer is rate-limited (a handful of messages an hour, shared across the whole project) and its address is not yours. Fine for you and a few friends; a real deployment wants **Project Settings → Authentication → SMTP Settings** pointed at a real sender, or confirmations will silently stop arriving mid-term. The resend button's own per-address cooldown surfaces through `describeAuthError` as "Too many attempts."
+
+Clicking a confirmation link opens the app with a session in the URL fragment, which the client consumes on construction (see [authCallback.ts](src/lib/authCallback.ts)) — so the student arrives signed in. The screen still says to come back and sign in, which holds either way and is the safe wording when the link is opened on a different device.
 
 ## 6. Grade calculation
 
@@ -463,12 +493,18 @@ Ordered roughly by how likely each is to bite you.
 | Symptom | Likely cause | Look in |
 |---|---|---|
 | "Supabase isn't configured yet" screen | No `.env.local`, or the dev server wasn't restarted after writing one (§3) | `isSupabaseConfigured` in [supabase.ts](src/lib/supabase.ts) |
+| Keep-alive run fails with "Set the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets." | Those repository secrets are unset, or were added as environment/unshared-org secrets so the job sees them empty (§3a) | GitHub → Settings → Secrets and variables → Actions |
+| Keep-alive run fails with "Expected HTTP 200 from Supabase, got …" | 401 = rotated anon key; 404 = migration never ran on this project; 000 = wrong URL (§3a) | [keep-supabase-awake.yml](.github/workflows/keep-supabase-awake.yml) |
 | Signed in, but the account looks empty | RLS policy missing or wrong, so the row is filtered out rather than returned | [0001_user_data.sql](supabase/migrations/0001_user_data.sql) |
 | "Couldn't load your courses" | The read failed; the store refuses to save on top of it by design (§5) | `loadError` in [useGradeStore.ts](src/hooks/useGradeStore.ts) |
 | Edits stop persisting after a moment offline | Expected — `saveError` toasts, the edit stays on screen unsaved (§5) | `saveError` in [useGradeStore.ts](src/hooks/useGradeStore.ts) |
 | The app reloads data in an endless loop | `storage` isn't identity-stable across renders (§5) | [useAccountStorage.ts](src/hooks/useAccountStorage.ts) |
 | Last edit lost when the tab was closed instantly | Debounced save hadn't fired; the `pagehide` flush is best-effort (§5a) | [debouncedStorage.ts](src/lib/debouncedStorage.ts) |
-| Registering seems to do nothing | Email confirmation is on — the form says to check the inbox (§3) | Supabase → Authentication → Sign In / Providers |
+| Registering seems to do nothing | Email confirmation is on — the form says to check the inbox (§5b) | Supabase → Authentication → Sign In / Providers |
+| Registration sends no email at all | **Confirm email** is off, so a session comes back and the student is signed straight in (§5b) | Supabase → Authentication → Sign In / Providers |
+| Confirmation email arrives, but its link lands on the wrong site | The app's origin isn't in the Redirect URLs allow-list, so Supabase fell back to Site URL (§5b) | Supabase → Authentication → URL Configuration |
+| Confirmation emails stop arriving partway through a busy day | Built-in mailer rate limit, shared project-wide — needs real SMTP (§5b) | Supabase → Project Settings → Authentication → SMTP |
+| Right password rejected with nothing offered | Account never confirmed; should land on the resend screen, not an error (§5b) | `isEmailNotConfirmedError` in [auth.ts](src/lib/auth.ts) |
 | "Could not reach the server" on sign in | Wrong `VITE_SUPABASE_URL`, or genuinely offline | `describeAuthError` in [auth.ts](src/lib/auth.ts) |
 | Old localStorage courses seem gone after signing in | They're offered once per account; declining is remembered (§5a) | [useLocalDataImport.ts](src/hooks/useLocalDataImport.ts) |
 | Final grade shows `—` despite marks entered | Breakdown weights genuinely don't reach 100 — the warning shows the real total | [CourseSection.tsx](src/components/CourseSection.tsx), `areWeightsValid` |

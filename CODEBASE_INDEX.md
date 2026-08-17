@@ -9,6 +9,7 @@
 | I want to... | Go to |
 |---|---|
 | Change sign-in, registration or the auth gate | [src/lib/auth.ts](src/lib/auth.ts), [src/components/AuthForm.tsx](src/components/AuthForm.tsx), [src/App.tsx](src/App.tsx) |
+| Change email confirmation, or find out why no email arrived | Whether one is sent is a **dashboard setting**, not code — see TECHNICAL_README §5b; the app handles both ways |
 | Change where account data is stored, or the SQL/RLS | [src/lib/supabaseCourseStorage.ts](src/lib/supabaseCourseStorage.ts), [supabase/migrations/0001_user_data.sql](supabase/migrations/0001_user_data.sql) |
 | Change semesters, terms or their ordering | [src/lib/semesters.ts](src/lib/semesters.ts) |
 | Change grade math (marks totals, weighting, re-marking a row) | [src/lib/gradeCalculations.ts](src/lib/gradeCalculations.ts) |
@@ -22,6 +23,7 @@
 | Change page layout / header | [src/pages/Index.tsx](src/pages/Index.tsx), [src/components/CourseToolbar.tsx](src/components/CourseToolbar.tsx) |
 | Change colours or animations | [src/index.css](src/index.css) (hex vars), [tailwind.config.ts](tailwind.config.ts) (`token()` mapping) |
 | Change which panel scrolls, or the pinned course header | [src/pages/Index.tsx](src/pages/Index.tsx), [src/components/CourseSection.tsx](src/components/CourseSection.tsx) |
+| Fix the failing keep-alive job, or change the ping schedule | [.github/workflows/keep-supabase-awake.yml](.github/workflows/keep-supabase-awake.yml) — needs `SUPABASE_URL` / `SUPABASE_ANON_KEY` repository secrets, no `VITE_` prefix |
 
 ## Layering
 
