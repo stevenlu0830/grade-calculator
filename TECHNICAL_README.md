@@ -226,7 +226,17 @@ Two things this has to get right, both covered in [authForm.test.tsx](src/test/a
 
 ⚠️ The link's destination must be in **Authentication → URL Configuration → Redirect URLs**, or Supabase drops it and sends the student to Site URL. `emailReturnUrl()` sends `window.location.origin`, so every origin needs listing — production, `http://localhost:8080`, and a wildcard like `https://*-yourname.vercel.app` for previews. This being missing looks exactly like a broken link.
 
-⚠️ Supabase's built-in mailer is rate-limited (a handful of messages an hour, shared across the whole project) and its address is not yours. Fine for you and a few friends; a real deployment wants **Project Settings → Authentication → SMTP Settings** pointed at a real sender, or confirmations will silently stop arriving mid-term. The resend button's own per-address cooldown surfaces through `describeAuthError` as "Too many attempts."
+⚠️ Supabase's built-in mailer sends **2 emails per hour for the whole project**, counted across every address, and its sender is not yours. Registering a few test accounts in a row exhausts it, and the refusal is `email rate limit exceeded` — which is a *project* limit, not anything the student did. A real deployment wants **Project Settings → Authentication → SMTP Settings** pointed at a real sender, or confirmations stop arriving mid-term. **Authentication → Rate Limits** can only raise the cap once custom SMTP is configured; on the built-in mailer the figure is fixed.
+
+Three separate refusals arrive as 429s, and `describeAuthError` keeps them apart because they are minutes vs. an hour apart in how long they last:
+
+| Supabase says | Screen says | Really means |
+| --- | --- | --- |
+| `email rate limit exceeded` | "as many emails as it's allowed to this hour" | Project-wide quota; retrying sooner cannot work |
+| `…you can only request this after 51 seconds` | "Wait 51 seconds and try again" | Per-address cooldown, and the number is repeated as given |
+| anything else rate-limit-shaped | "Too many attempts. Wait a minute" | Unclassified 429 |
+
+The first two were one message reading "wait a minute", which sent students to retry against a cap an hour from moving.
 
 Clicking a confirmation link opens the app with a session in the URL fragment, which the client consumes on construction (see [authCallback.ts](src/lib/authCallback.ts)) — so the student arrives signed in. The screen still says to come back and sign in, which holds either way and is the safe wording when the link is opened on a different device.
 
@@ -503,7 +513,8 @@ Ordered roughly by how likely each is to bite you.
 | Registering seems to do nothing | Email confirmation is on — the form says to check the inbox (§5b) | Supabase → Authentication → Sign In / Providers |
 | Registration sends no email at all | **Confirm email** is off, so a session comes back and the student is signed straight in (§5b) | Supabase → Authentication → Sign In / Providers |
 | Confirmation email arrives, but its link lands on the wrong site | The app's origin isn't in the Redirect URLs allow-list, so Supabase fell back to Site URL (§5b) | Supabase → Authentication → URL Configuration |
-| Confirmation emails stop arriving partway through a busy day | Built-in mailer rate limit, shared project-wide — needs real SMTP (§5b) | Supabase → Project Settings → Authentication → SMTP |
+| Confirmation emails stop arriving partway through a busy day | Built-in mailer sends 2/hour project-wide — needs real SMTP (§5b) | Supabase → Project Settings → Authentication → SMTP |
+| Registering says the app has sent its limit of emails this hour | Same 2/hour cap, hit by repeated test registrations. Waiting minutes won't clear it (§5b) | Supabase → Project Settings → Authentication → SMTP |
 | Right password rejected with nothing offered | Account never confirmed; should land on the resend screen, not an error (§5b) | `isEmailNotConfirmedError` in [auth.ts](src/lib/auth.ts) |
 | "Could not reach the server" on sign in | Wrong `VITE_SUPABASE_URL`, or genuinely offline | `describeAuthError` in [auth.ts](src/lib/auth.ts) |
 | Old localStorage courses seem gone after signing in | They're offered once per account; declining is remembered (§5a) | [useLocalDataImport.ts](src/hooks/useLocalDataImport.ts) |

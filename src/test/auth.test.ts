@@ -114,10 +114,24 @@ describe('describeAuthError', () => {
     ).toMatch(/haven’t used/i);
   });
 
-  it('reads the resend cooldown as the rate limit it is', () => {
+  it('repeats the cooldown’s own number of seconds', () => {
+    // Rounding this to "a minute" was wrong in both directions, and the real
+    // figure is right there in the message.
     expect(
       describeAuthError(new Error('For security purposes, you can only request this after 51 seconds.'))
-    ).toMatch(/wait a minute/i);
+    ).toMatch(/51 seconds/);
+  });
+
+  it('distinguishes the project’s hourly email cap from a short cooldown', () => {
+    // The one that stalled a registration for an hour while the screen said to
+    // wait a minute. Must not mention minutes, or it invites a useless retry.
+    const capped = describeAuthError(new Error('email rate limit exceeded'));
+    expect(capped).toMatch(/this hour/i);
+    expect(capped).not.toMatch(/minute/i);
+  });
+
+  it('still catches a rate limit it has no specific wording for', () => {
+    expect(describeAuthError(new Error('Request rate limit reached'))).toMatch(/too many attempts/i);
   });
 
   it('sends an invalid email link back for a fresh one', () => {

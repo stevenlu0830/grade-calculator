@@ -120,9 +120,9 @@ describe('signing in to an unconfirmed account', () => {
     signIn();
     fireEvent.click(await screen.findByRole('button', { name: /send a new link/i }));
 
-    // The rate limit is the resend button's own, so it belongs on this screen —
+    // The cooldown is the resend button's own, so it belongs on this screen —
     // bouncing back to the form would lose the address it was typed against.
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/wait a minute/i));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/51 seconds/));
     expect(screen.getByRole('heading', { name: /confirm your email/i })).toBeTruthy();
   });
 

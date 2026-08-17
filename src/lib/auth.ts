@@ -63,8 +63,22 @@ export function describeAuthError(error: unknown): string {
   if (normalized.includes('email link is invalid or has expired')) {
     return 'That link is invalid or has expired. Request a new one.';
   }
-  // "For security purposes, you can only request this after 51 seconds" is the
-  // resend button's own rate limit, and says the same thing as the two below.
+  // Three different refusals arrive as 429s, and they are minutes vs. an hour
+  // apart in how long they last. Collapsing them into one "wait a minute" sent
+  // people back to retry against a cap that hadn't moved, over and over.
+
+  // The project's own outbound email quota — 2/hour on Supabase's built-in
+  // mailer, counted across every address, so a handful of test registrations
+  // exhausts it. Nothing the student did wrong, and nothing they can retry into.
+  if (normalized.includes('email rate limit exceeded')) {
+    return 'The app has sent as many emails as it’s allowed to this hour. Try again later.';
+  }
+  // The per-address cooldown between one email and the next, which does name a
+  // real number of seconds — worth repeating rather than rounding to "a minute".
+  const cooldown = normalized.match(/after (\d+) seconds?/);
+  if (cooldown) {
+    return `Wait ${cooldown[1]} seconds and try again.`;
+  }
   if (
     normalized.includes('rate limit') ||
     normalized.includes('too many requests') ||
