@@ -62,3 +62,12 @@ export function requireSupabase(): SupabaseClient {
 
 /** The table holding one row of saved grade data per user. */
 export const USER_DATA_TABLE = 'user_data';
+
+/**
+ * The table holding one saved snapshot per user — Save / Reload Progress.
+ *
+ * Separate from `USER_DATA_TABLE` on purpose: that one is the live autosave, so
+ * a snapshot kept alongside it in the same row could never differ from what is
+ * already on screen. See `supabase/migrations/0002_user_progress.sql`.
+ */
+export const USER_PROGRESS_TABLE = 'user_progress';

@@ -17,8 +17,7 @@
 | Change the breakdown types offered, or sub-breakdown auto-naming | [src/lib/breakdownPresets.ts](src/lib/breakdownPresets.ts) |
 | Change how a grade is displayed (colour, letter, decimals) | [src/lib/gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Change state shape, persistence, or migrate saved data | [src/hooks/useGradeStore.ts](src/hooks/useGradeStore.ts), [src/lib/courseStorage.ts](src/lib/courseStorage.ts) |
-| Change the save-file format | [src/lib/progressFile.ts](src/lib/progressFile.ts) |
-| Change how files reach disk | [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts) |
+| Change the Save/Reload Progress snapshot | [src/lib/supabaseProgress.ts](src/lib/supabaseProgress.ts), [src/hooks/useProgressSnapshot.ts](src/hooks/useProgressSnapshot.ts) |
 | Change the add-course / add-breakdown dialogs | [NewCourseDialog.tsx](src/components/NewCourseDialog.tsx), [AddBreakdownDialog.tsx](src/components/AddBreakdownDialog.tsx) |
 | Change page layout / header | [src/pages/Index.tsx](src/pages/Index.tsx), [src/components/CourseToolbar.tsx](src/components/CourseToolbar.tsx) |
 | Change colours or animations | [src/index.css](src/index.css) (hex vars), [tailwind.config.ts](tailwind.config.ts) (`token()` mapping) |
@@ -35,8 +34,8 @@ pages / components  →  hooks  →  lib (domain + format + io)  →  types
 
 - **Domain** (`gradeCalculations`, `gradePolicies`, `breakdownPresets`) — pure logic, no DOM, no Tailwind.
 - **Presentation** (`gradeFormatting`) — grade → string/class. Imports domain, never the reverse.
-- **I/O** (`progressFile`) — pure builder/parser + a thin effectful wrapper.
-- **Seams** (`courseStorage`, `download`) — the only modules that touch `localStorage` / the DOM directly.
+- **I/O** (`supabaseCourseStorage`, `supabaseProgress`) — pure row builder/parser + a thin effectful wrapper.
+- **Seams** (`courseStorage`, `supabase`) — the only modules that touch `localStorage` / the Supabase client directly.
 
 ## Entry points
 
@@ -109,7 +108,7 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - `shortSemesterLabel(semester)` — `"2023 Winter Term 1"` → `"2023W1"`, for the panel only, where the full label got truncated to "2023 Winter Te…". Display-only: nothing parses it back, and the tooltip hands the full label straight back on hover.
 - `semesterYearOptions(referenceYear)` — next year back through five, newest first. Takes the year so it stays pure.
 
-⚠️ An empty semester survives a reload only because it's on the saved list — and in `progresses/`, only because of `_manifest.json`.
+⚠️ An empty semester survives a reload only because it's on the saved `semesters` list — both in `user_data` and in the Save Progress snapshot.
 
 ## Presets — `src/lib/breakdownPresets.ts`
 
@@ -167,31 +166,29 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - [src/lib/courseStorage.ts](src/lib/courseStorage.ts) — `CourseStorage` interface (**async** `load`/`save`) + `localCourseStorage`, both trading in `GradeData`. Also `EMPTY_GRADE_DATA`, and `readLocalData()` / `hasLocalData()` — the synchronous reads the sign-in import offer asks its question with. Key `ubc-grade-calculator-data`, stored as `{ version, courses, semesters }`. `SCHEMA_VERSION = 6`.
 - [src/lib/supabaseCourseStorage.ts](src/lib/supabaseCourseStorage.ts) — `CourseStorage` over `public.user_data`. Pure `buildUserDataRow(userId, data)` / `parseUserDataRow(row)` split from the effectful `supabaseCourseStorage(userId, client?)`. Stores the **same envelope** `localStorage` does, so both share `migrate`. `maybeSingle()` on read (a new account has no row, which isn't an error); `upsert` on `user_id` for write. Errors **throw** rather than log — the store needs to know a read failed.
 - [src/lib/debouncedStorage.ts](src/lib/debouncedStorage.ts) — `debouncedStorage(inner, delayMs = 600)` decorator returning a `FlushableStorage` (`+ flush()`, `cancel()`). Coalesces a burst into one write of the newest data; every superseded `save`'s promise still settles with the write that replaced it. Reads pass straight through. Claims the pending write *before* awaiting, so a save arriving mid-flight queues a fresh timer instead of being dropped. `migrate(raw)` converts bare v1 `components`/`grade` data (defaulting `fullMarks` to `LEGACY_FULL_MARKS`), then `normalizeCourses` backfills fields added later — `fullCreditGrade` and `fullMarks` become `null` rather than `undefined`, which a `!== null` check would otherwise read as *set*, and `isBonus` becomes `false`. Anything older than v5 has no semester list; the store rebuilds it from the courses.
-- [src/lib/download.ts](src/lib/download.ts) — `downloadBlob`. The **only** place the app hands a file to the browser.
 - [src/lib/id.ts](src/lib/id.ts) — `createId()`, `crypto.randomUUID()` with a fallback.
-- [src/lib/exportFormat.ts](src/lib/exportFormat.ts) — `timestampedFilename`.
 
 ## Save / reload progress
 
-One JSON file **per course** in `progresses/`, plus a manifest, written automatically with no prompt: "CPSC 330" → `progresses/CPSC_330.json`.
+A manual checkpoint in `public.user_progress`, one row per account, written and restored with no prompt. Separate from the `user_data` row the store autosaves to — a snapshot sharing that row could never differ from what's on screen, so the buttons would do nothing.
 
-**Client — [src/lib/progressFile.ts](src/lib/progressFile.ts)**
-- `courseFileName(name, taken)` — spaces → underscores, filesystem-unsafe characters stripped, **leading dots removed** (the server refuses hidden files, so a course named `..` would otherwise be dropped silently), deduped case-insensitively.
-- `PROGRESS_MANIFEST_FILE` (`_manifest.json`) / `isManifestFile` / `buildManifestJson` — `{ version, semesters, courseOrder }`. Holds the two things no per-course file can: semesters with no courses, and the order the courses were in. Written **even with zero courses**, and its name is reserved before filenames are handed out so a course can't claim it.
-- `orderCourses(courses, courseOrder)` — puts a reloaded folder back in saved order. Keyed on course **id**, so renaming a course doesn't reshuffle; anything unlisted keeps its filename order at the end.
-- `buildProgressFiles(data)` / `parseProgressFiles(files)` — **pure**, manifest + one file per course and back. Parsing skips the manifest rather than reporting it as a bad file, and a folder without one still loads (alphabetically, semesters derived from the courses).
-- `saveProgressToServer` / `loadProgressFromServer` — `PUT`/`GET` on `/api/progress`. Throw `ProgressApiUnavailableError` when nothing is listening *or* the response isn't JSON (a static host answers the SPA fallback with HTML, so a 200 alone proves nothing).
-- `buildProgressJson` / `parseProgressJson` — each course file holds the same `{ version, courses }` envelope as `localStorage` with one course, so `migrate` opens old files. `semesters` is written only when passed, which is the single-file fallback's case.
-- `saveProgressAsSingleFile` — the no-server fallback; carries the semesters itself and keeps order by being one array, so it needs no manifest.
+**[src/lib/supabaseProgress.ts](src/lib/supabaseProgress.ts)**
+- `buildProgressRow(userId, data)` / `parseProgressRow(row)` — **pure**, split from the effectful wrapper. Stores the **same envelope** `user_data` and `localStorage` do, so all three share `migrate` and an older snapshot still opens.
+- `parseProgressRow` returns `null` for "never saved" and an empty `ProgressSnapshot` for "saved with nothing in it". The hook needs both: only the first means there is nothing to restore. Unreadable `data` degrades to empty rather than throwing; an unparseable `saved_at` degrades to `null`.
+- `supabaseProgressStorage(userId, client?)` — `maybeSingle()` on read (an account that never saved has no row, which isn't an error); `upsert` on `user_id` for write. Errors **throw**; the hook toasts them. Not debounced — pressing Save Progress is one deliberate act.
 
-**Server — [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts)**
-- A Vite plugin adding `GET`/`PUT /api/progress`, attached to both the dev and preview servers. The browser can't touch the filesystem; the Node process behind it can.
-- `isSafeProgressFileName` / `resolveProgressPath` — the security boundary. Filenames arrive from the page, so traversal (`../../.bashrc`) must be rejected; both a name check and a resolved-path check apply. Unicode is allowed since course titles aren't always English.
-- `writeProgressFiles` makes the folder **match the payload exactly**: it writes the incoming files and prunes every other `.json`. Saving zero courses leaves only the manifest, which is why the client has no "nothing to save" guard. Non-JSON files are never touched.
+**[src/hooks/useProgressSnapshot.ts](src/hooks/useProgressSnapshot.ts)**
+- Owns both buttons and every toast. Save reports the course count; reload reports the count plus when the snapshot was taken.
+- ⚠️ Save runs **even with zero courses**. A "nothing to save" guard would leave the previous snapshot in place for the next reload to resurrect.
+- Reload refuses an absent or empty snapshot rather than restoring it — restoring one could only wipe the screen.
 
-⚠️ The API only exists while a Vite server runs. `npm run build` output served elsewhere has no Node process, so the client degrades to a download and a manual file picker.
+**[supabase/migrations/0002_user_progress.sql](supabase/migrations/0002_user_progress.sql)**
+- `user_id` PK / `version` / `data` jsonb / `saved_at`, with the same four RLS policies `user_data` has.
+- `saved_at` is maintained by a `before update` trigger. Saving is an upsert, so without it the column's `default now()` would only ever record the *first* save.
 
-⚠️ `progresses/` is gitignored — it's personal data, not source.
+⚠️ Run this migration in the Supabase SQL Editor before Save/Reload Progress will work — a project set up from `0001` alone answers with a missing-table error.
+
+⚠️ Save is one **atomic** upsert of the whole tree, so a deleted course cannot survive in the snapshot. This replaced a per-course-JSON-file scheme served by a Vite dev-server plugin; `progresses/` folders left over from it are read by nothing and are gitignored.
 
 ## Components — `src/components/`
 
@@ -216,7 +213,7 @@ Presentational; state arrives as props. None read the store.
 
 - [src/pages/Index.tsx](src/pages/Index.tsx) — owns the store, header, empty state, `NewCourseDialog`, and the horizontal snap carousel. `h-screen flex flex-col`: the page never scrolls, the semester panel and `<main>` do. `<main>` is the **only** scroll container for the courses (both axes) — a nested `overflow-x-auto` would break the pinned course headers. Cards cap at `max-w-md` so two fit side by side. Takes `{ storage, user }` from the gate. Renders `FullPageLoader` while loading and a retry screen on `loadError` (editing on top of a failed read would save an empty tree over the account). Toasts `saveError`. Hosts `AccountMenu` and `ImportLocalDataDialog`.
 - [src/pages/NotFound.tsx](src/pages/NotFound.tsx) (24) — 404.
-- [src/hooks/useProgressFile.ts](src/hooks/useProgressFile.ts) — owns both **Save Progress** and **Reload Progress**: calls the local API, falls back on `ProgressApiUnavailableError`, and reports outcomes. Holds the hidden multi-file input used by the fallback.
+- [src/hooks/useProgressSnapshot.ts](src/hooks/useProgressSnapshot.ts) — owns both **Save Progress** and **Reload Progress**: one round trip each to `user_progress`, and the toasts reporting what happened.
 - [src/hooks/use-mobile.tsx](src/hooks/use-mobile.tsx) — 768px hook; used only by `ui/sidebar`.
 - [src/hooks/use-toast.ts](src/hooks/use-toast.ts) — shadcn toast reducer; app code uses `sonner` instead.
 - [src/lib/utils.ts](src/lib/utils.ts) — `cn()`, `clamp(value, min, max)` and `plural(count, noun)` (`1 course` / `3 courses`, used by the delete dialogs and the progress toasts).
@@ -244,14 +241,14 @@ New: [auth](src/test/auth.test.ts) (`validateCredentials`, `describeAuthError`) 
 ⚠️ `@testing-library/dom` is a required peer of RTL 16 and was **missing**, so `useGradeStore.test.ts` couldn't be imported at all and its tests never ran. Now a devDependency.
 
 All tests live here, one file per module, importing via `@/lib/...`:
-[gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [progressFile](src/test/progressFile.test.ts) (save/reload round trip, bad input, older files) · [useGradeStore](src/test/useGradeStore.test.ts) (hook driven via `renderHook` with in-memory storage; semester lifecycle and import).
+[gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [supabaseProgress](src/test/supabaseProgress.test.ts) (snapshot round trip, never-saved vs empty, timestamps, older snapshots) · [useGradeStore](src/test/useGradeStore.test.ts) (hook driven via `renderHook` with in-memory storage; semester lifecycle and import).
 [utils](src/test/utils.test.ts) covers `clamp` and `plural`. [setup.ts](src/test/setup.ts) provides `jest-dom` + a `matchMedia` stub. Untested: React components (the store hook is now covered).
 
 ## Build & config
 
 - **Env** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` in `.env.local` (gitignored by `*.local`), typed in [src/vite-env.d.ts](src/vite-env.d.ts), template in [.env.example](.env.example). Read **only** by `src/lib/supabase.ts`. Vite reads env files at startup — restart after editing.
 - ⚠️ `npm i` fails `ERESOLVE` (`@vitejs/plugin-react-swc` peers `vite ≤7`, project runs vite 8). Use `npm i --legacy-peer-deps`.
-- [vite.config.ts](vite.config.ts) — port **8080**, registers `progressFilesPlugin()`, `open: true` (launches the OS default browser on `npm run dev`; `BROWSER=none` suppresses it), `@` → `./src`, `lovable-tagger` in dev only.
+- [vite.config.ts](vite.config.ts) — port **8080**, `open: true` (launches the OS default browser on `npm run dev`; `BROWSER=none` suppresses it), `@` → `./src`, `lovable-tagger` in dev only.
 - [vitest.config.ts](vitest.config.ts) — jsdom, globals on.
 - [.claude/launch.json](.claude/launch.json) — dev-server config for tooling.
 - [tsconfig.app.json](tsconfig.app.json) — ⚠️ `strict: false`. Types are advisory.

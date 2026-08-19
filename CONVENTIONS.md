@@ -43,10 +43,10 @@ pages / components  →  hooks  →  lib  →  types
 - `src/lib/*` never imports React. If a helper needs a hook, it belongs in `src/hooks/`.
 - **Domain** (`gradeCalculations`, `gradePolicies`) must not know about Tailwind, the DOM, or display strings.
 - **Presentation** (`gradeFormatting`) may import domain. Never the reverse.
-- Side effects live at the edges: `courseStorage` owns `localStorage`, `download` owns the DOM, `supabase.ts` owns the client and is the **only** reader of `import.meta.env`. Nothing else touches any of them.
+- Side effects live at the edges: `courseStorage` owns `localStorage`, `supabase.ts` owns the client and is the **only** reader of `import.meta.env`. Nothing else touches either of them.
 - `lib/` may not add window/document listeners. A `pagehide` flush belongs in a hook (`useAccountStorage`), not in the storage decorator it flushes.
 - Auth calls go through `src/lib/auth.ts`, never `supabase.auth.*` from a component — same rule as the store.
-- Split every export into a pure builder plus a thin effectful wrapper (`buildCoursesCsv` / `exportToCSV`). Assert the builder in tests; keep the wrapper too small to break.
+- Split every export into a pure builder plus a thin effectful wrapper (`buildProgressRow` / `supabaseProgressStorage`). Assert the builder in tests; keep the wrapper too small to break.
 
 ## Grade logic
 
@@ -109,7 +109,7 @@ The domain is Course → **Breakdown** → **Sub-breakdown**. Use those words in
 
 - Vitest + jsdom, globals enabled; the existing files import `describe`/`it`/`expect` explicitly — match that.
 - **All tests live in `src/test/`**, named `<module>.test.ts` after the module under test. Never colocate beside source.
-- Tests import through the `@/` alias (`@/lib/progressFile`), never with relative paths.
+- Tests import through the `@/` alias (`@/lib/supabaseProgress`), never with relative paths.
 - Hook tests build their storage **outside** the `renderHook` callback, then `await settle()` for the initial load. Inline construction reloads in a loop.
 - No `waitFor` — it comes from `@testing-library/dom` and reads better, but the local `settle()` (drain microtasks inside `act`) is what the existing tests use. Stay consistent.
 - Test the pure functions; that's what the pure/effectful split is for. Components are currently untested.

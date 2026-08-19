@@ -23,5 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 UI_GUIDE.md
-# Saved course progress written by the dev server
+# Course progress written by the dev server before Save Progress moved to
+# Supabase. Nothing writes here any more; the rule stays so a leftover folder
+# is never committed.
 progresses/

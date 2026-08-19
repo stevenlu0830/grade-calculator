@@ -43,7 +43,7 @@ npm install --legacy-peer-deps
 Set up the database once:
 
 1. Create a project at [supabase.com](https://supabase.com) — the free tier is plenty.
-2. In your project's **SQL Editor**, paste and run the contents of `supabase/migrations/0001_user_data.sql`. That creates the table your grades live in and the security rules that keep it yours.
+2. In your project's **SQL Editor**, paste and run the contents of `supabase/migrations/0001_user_data.sql`, then `supabase/migrations/0002_user_progress.sql`. Between them those create the two tables your grades live in — the one autosaved as you type, and the one **Save Progress** writes to — and the security rules that keep both yours.
 3. Copy `.env.example` to `.env.local` and fill in the two values from **Project Settings → API**:
    ```sh
    VITE_SUPABASE_URL=https://your-project-ref.supabase.co
@@ -60,7 +60,7 @@ Then start it:
 npm run dev
 ```
 
-The app opens at **http://localhost:8080**. Leave that terminal running while you use it — the **Save Progress** button needs it (see [Save and reload](#save-and-reload-your-progress)).
+The app opens at **http://localhost:8080**.
 
 If the app shows a "Supabase isn't configured yet" screen, either `.env.local` is missing a value or the dev server was started before you wrote the file — stop it and run `npm run dev` again.
 
@@ -232,21 +232,21 @@ Every trash button asks first, and tells you what else goes with it. There is **
 
 Your grades save to your account automatically as you type — you don't have to do anything, and they'll be there on your next sign-in, on any computer.
 
-**Save Progress** does something extra: it writes a readable copy to disk, one JSON file per course, into a `progresses/` folder inside the project — under a subfolder of your own, so two people sharing a computer don't overwrite each other. It's for keeping a backup, reading your data outside the app, or copying it somewhere.
+**Save Progress** does something extra: it keeps a separate **saved copy** of everything, in your account alongside the automatic one. Think of it as a checkpoint — somewhere to get back to if you spend an afternoon experimenting with "what if I bomb the final" and want your real numbers back.
 
 1. Press **Save Progress** in the header.
 2. A toast confirms how many courses were saved — `3 Courses Saved`.
 
-**Reload Progress** reads that folder back in.
+**Reload Progress** brings that copy back.
 
 1. Press **Reload Progress** in the header.
-2. A toast confirms how many courses came back.
+2. A toast confirms how many courses came back, and when that copy was saved.
 
-⚠️ **Reloading replaces what's on screen — it doesn't merge.** Anything you've added since the last save is gone. If a file can't be read it's skipped and reported, rather than wrecking the rest.
+⚠️ **Reloading replaces what's on screen — it doesn't merge.** Anything you've added since the last save is gone.
 
-Saving also *mirrors* the folder: files for courses you've deleted are removed, so a reload can't resurrect them.
+Saving replaces the whole checkpoint at once, so courses you've deleted are gone from it too and a reload can't resurrect them. And because the copy lives in your account rather than on one machine, you can save on your laptop and reload on a lab computer.
 
-If the dev server isn't running, **Save Progress** falls back to downloading everything as one file, and **Reload Progress** opens a file picker so you can choose it back.
+If you press **Reload Progress** before you've ever pressed **Save Progress**, nothing happens except a toast telling you so — it won't wipe what you have.
 
 ### Sign out
 
@@ -293,7 +293,7 @@ Bonus marks (a 22/20) and bonus breakdowns both do that, on purpose. Nothing is 
 Something used **Change full mark**, which scales the score to keep its percentage. Typing directly in the boxes never does that.
 
 **A semester I made is gone.**
-Semesters with no courses only survive if they were saved — check that `progresses/_manifest.json` exists if you reloaded from disk. Deleting a semester also deletes its courses, and that can't be undone.
+Semesters with no courses are saved on their own list, so an empty one survives a **Reload Progress** as long as it existed when you pressed **Save Progress**. Deleting a semester also deletes its courses, and that can't be undone.
 
 **Who can see my grades?**
-Only you. They're stored in your own row of your own Supabase project, protected by row-level security, and there's no analytics or third-party tracking in the app. The `progresses/` folder is on your machine and is excluded from git.
+Only you. Both copies — the automatic one and the one **Save Progress** writes — are stored in your own rows of your own Supabase project, protected by row-level security, and there's no analytics or third-party tracking in the app.

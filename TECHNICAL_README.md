@@ -8,12 +8,12 @@
 A single-page, client-only calculator for UBC-style weighted course grades. A student enters **semesters** → courses → weighted **breakdowns** (e.g. "Assignments 30%") → **sub-breakdowns** (individual assignments, each scored out of its own marks), and sees breakdown grades, weighted contributions, and a final letter grade recompute live.
 
 **Defining characteristics:**
-- **Accounts, via Supabase.** Sign-in is required; each student's grades live in their own row and are guarded by row-level security (§5a). Telemetry and third-party calls remain zero. A local `/api/progress` route served by the Vite dev server still lets Save/Reload touch `progresses/` on disk (§8) — it doesn't exist in a static build. The only other external fetch is a Google Fonts stylesheet in `src/index.css`.
+- **Accounts, via Supabase.** Sign-in is required; each student's grades live in their own row and are guarded by row-level security (§5a). Telemetry and third-party calls remain zero. Save/Reload Progress is a second Supabase table holding one manual snapshot per account (§8), so it works in a static build and follows the student between machines. The only other external fetch is a Google Fonts stylesheet in `src/index.css`.
 - **One JSON document per user.** Supabase stores the whole `{ courses, semesters }` tree in a single `jsonb` column, in exactly the shape `localStorage` used to hold — so one `migrate` serves both.
 - **All state in one hook**, instantiated once, prop-drilled down three levels.
 - **Marks-based**: a grade is total marks achieved over total marks available, so a 45/50 test outweighs a 9/10 quiz — unless a breakdown opts into equal weighting, which is the one way to get an average of percentages.
 - **Grouped by semester**, chosen from a year and one of UBC's four terms.
-- Supports drop-lowest, downweight-lowest, equal-weight and full-credit-threshold grading policies, plus saving each course to its own JSON file in a `progresses/` folder.
+- Supports drop-lowest, downweight-lowest, equal-weight and full-credit-threshold grading policies, plus a manual save/reload checkpoint kept in the student's account.
 
 ## 2. Stack
 
@@ -205,13 +205,13 @@ user_data(user_id uuid primary key references auth.users, version int, data json
 
 **A JSONB blob, not four relational tables.** The app already loads and saves everything at once, so per-row sync buys nothing, and a policy on one row is much smaller to get right than four. The costs, accepted knowingly: no server-side querying, whole-document writes, and last-write-wins if the same account edits in two tabs at once.
 
-⚠️ **RLS is the entire access-control story.** The anon key ships in the browser bundle, so without the policies in [0001_user_data.sql](supabase/migrations/0001_user_data.sql) any visitor could read every row. `using` gates which rows are visible; `with check` gates what a row may become, which is what stops a write aimed at someone else's `user_id`. If you add a table, enable RLS on it in the same migration.
+⚠️ **RLS is the entire access-control story.** The anon key ships in the browser bundle, so without the policies in [0001_user_data.sql](supabase/migrations/0001_user_data.sql) and [0002_user_progress.sql](supabase/migrations/0002_user_progress.sql) any visitor could read every row. `using` gates which rows are visible; `with check` gates what a row may become, which is what stops a write aimed at someone else's `user_id`. If you add a table, enable RLS on it in the same migration.
 
 **Writes are debounced.** The store autosaves on every state change, which against `localStorage` was free and against a network is not — typing "87" into a marks field is two renders. [debouncedStorage](src/lib/debouncedStorage.ts) decorates any `CourseStorage`, coalescing a burst into one write of the newest data (600 ms) while still settling every superseded `save`'s promise, so a caller awaiting it learns whether their edit landed. `useAccountStorage` flushes it on `pagehide` and on unmount. That flush is best-effort: the browser may not stay alive for the round trip, so an edit made in the last fraction of a second before the tab closes can still be lost.
 
 **Pre-accounts data isn't stranded.** [useLocalDataImport](src/hooks/useLocalDataImport.ts) offers the browser's old `localStorage` courses to an account that has none, once per user (the answer is remembered under `ubc-grade-calculator-local-import-offered:<userId>`). It deliberately never merges — it only fires when the account is empty, so there's no "which copy wins" question to get wrong.
 
-`progresses/` (§8) is unchanged and **per-machine, not per-account**: it's an export/backup mechanism, and it doesn't know who's signed in.
+Save/Reload Progress (§8) is **per-account too**, in its own table. It used to write JSON files to a `progresses/` folder through the dev server, which made it per-machine and unavailable in a static build; the same row-level security now covers both tables.
 
 ### 5b. Email confirmation
 
@@ -380,7 +380,7 @@ State flows down as props; mutations flow up as `on*` callbacks, with each level
 
 **Re-marking a row is its own action.** Editing a row's full-marks box changes the score — 8/10 retyped as 8/20 is a worse grade. When a course re-marks an item out of a different total the score hasn't changed, so [ChangeFullMarkDialog](src/components/ChangeFullMarkDialog.tsx) exists to say which of the two is meant: it takes the new total, previews `8 / 10 (80.00%) becomes 24 / 30`, and commits both fields together via `rescaleAchievedMarks` (§6). It's an edit dialog, so it holds a draft and is `key`ed on `open` like the advanced options modal. Its trigger sits on every sub-breakdown row, labelled by tooltip rather than text so the row still fits two courses side by side.
 
-Progress-file handling lives in [useProgressFile](src/hooks/useProgressFile.ts) — it owns the hidden `<input type="file">`, the read, the parse and the toasts, and is a hook rather than a button so the header and the empty state can both open the same picker.
+Save/Reload Progress lives in [useProgressSnapshot](src/hooks/useProgressSnapshot.ts) — it owns the two round trips and the toasts, and is a hook rather than a button so the header and the empty state can both reach the same actions.
 
 **Layout:** courses render in a horizontal scroll-snap carousel, each capped at `max-w-md` — narrow enough that two fit side by side on a laptop, which is what the sizing throughout the cards (`text-xs`, `h-7` inputs, `h-6` icon buttons) is in service of. A carousel is a deliberate choice from commit `d3347fb`, not a wrapping grid.
 
@@ -424,47 +424,51 @@ Because it works on a bare policy, the same component serves two places:
 
 ## 8. Save / reload progress
 
-Progress lives in `localStorage` automatically (§5). **Save Progress** additionally writes **one JSON file per course** into `progresses/` in the project root, and **Reload Progress** reads them all back. Both happen immediately, with no dialog:
+Progress autosaves to `user_data` as you type (§5). **Save Progress** additionally writes a **manual snapshot** to a second table, `user_progress`, and **Reload Progress** restores it. Both happen immediately, with no dialog.
 
 ```
-grade-calculator/
-└── progresses/
-    ├── _manifest.json
-    ├── CPSC_330.json
-    └── Databases_in_Data_Science.json
+user_data      ← the store writes here after every edit (debounced)
+user_progress  ← Save Progress writes here; Reload Progress reads it
 ```
 
-Filenames come from the course name: spaces → underscores, characters filesystems reject stripped, leading dots removed, collisions suffixed `_2` — deduped **case-insensitively**, since macOS and Windows would otherwise let two courses overwrite each other.
+**Why a second table and not a second column on `user_data`.** `user_data` is the live autosave, so a snapshot kept in the same row could never differ from what is already on screen — Reload Progress would hand back the courses the student is looking at, and the pair of buttons would do nothing. A checkpoint is only useful while it can lag the live tree. It's a table rather than a `snapshot` column for the same reason `user_data` isn't four tables: one row, one policy set, one thing to get right.
 
-Each course file holds the same `{ version, courses }` envelope `localStorage` uses, containing one course. So loading reuses `migrate` and a file written by an older build still opens; the persisted shape is defined once, not twice. Reloading **replaces** the course list — it is not a merge.
-
-**`_manifest.json` holds what no per-course file can:** the semester list and the course order.
-
-```json
-{ "version": 6, "semesters": ["2026 Winter Term 1"], "courseOrder": ["8f14e45f-…", "b1c2d3e4-…"] }
+```sql
+create table public.user_progress (
+  user_id  uuid        primary key references auth.users (id) on delete cascade,
+  version  integer     not null,
+  data     jsonb       not null,
+  saved_at timestamptz not null default now()
+);
 ```
 
-- **Order.** Reading a folder back gives whatever order the filenames sort in — editors and directory listings sort them alphabetically, which is not the arrangement the student built. `courseOrder` restores it. It's keyed on course **id**, not filename, so renaming a course doesn't shuffle the list. Anything the manifest doesn't mention — a file added by hand, a folder saved by an older build — keeps its filename order at the end rather than being dropped.
-- **Semesters.** An empty semester has no course file to live in, so without the manifest it would vanish on reload.
-- The manifest is written **even when there are no courses**, since an empty folder still has to remember the semesters. It is reserved before filenames are handed out, so a course called "manifest" can't claim it, and it's skipped when parsing rather than reported as a bad file. A folder with no manifest still loads — alphabetically, with semesters derived from the courses.
+`data` holds the same `{ version, courses, semesters }` envelope `user_data` and `localStorage` hold, so all three share `migrate` (§5) and a snapshot taken by an older build still opens. The persisted shape is defined once, not three times. Reloading **replaces** the course list — it is not a merge.
 
-**Saving is an overwrite, not an append.** After a save, `progresses/` matches the UI exactly: files whose course no longer exists are deleted, because reload reads *every* JSON in the folder and leftovers would resurrect deleted courses. Deleting all your courses and saving therefore leaves the folder holding **only the manifest** — there is deliberately no "nothing to save" guard, since refusing would leave the previous save behind for the next reload to pick up. Only `.json` files directly in `progresses/` are touched; anything else is left alone, and the toast reports what was removed.
+**Saving is one atomic overwrite.** The snapshot is upserted whole: the first save inserts, every later one replaces. Deleting a course and saving therefore leaves it out of the snapshot, and a reload can't resurrect it — there is deliberately no "nothing to save" guard, since refusing would leave the previous snapshot behind for the next reload to pick up. Saving an empty tree writes an empty snapshot, which is the point.
 
-**The save toast counts courses, it doesn't name the folder.** `3 Courses Saved`, not `Saved 3 courses to progresses/<uuid>/` — the destination is the app's bookkeeping and the per-account path is noise. The two places a destination still appears are the failure path (`Could not write to progresses/.`) and the no-server fallback, where the file genuinely went somewhere else: the browser's Downloads folder.
+`saved_at` is maintained by a `before update` trigger rather than sent by the client. Without it, the column's `default now()` would only ever record the *first* save, since every save after that takes the upsert's update path.
 
-`progresses/` is gitignored — it's personal data, not source.
+**Reload distinguishes three outcomes**, and the toast says which:
 
-### Why this needs a server
+| Row | Meaning | What happens |
+|---|---|---|
+| absent | never saved | *Nothing saved yet* — the screen is left alone |
+| present, empty | saved with nothing in it | *Your saved progress is empty* — the screen is left alone |
+| present, has data | a real checkpoint | restored, toast names the count and `saved_at` |
 
-A browser page **cannot** create a folder or list one. That's a sandbox rule, not a missing library, and the only in-page escape hatch (the File System Access API) forces a folder-picker dialog on every use and is Chromium-only.
+The first two are different pieces of news and `parseProgressRow` keeps them apart (`null` vs an empty `ProgressSnapshot`). Restoring an empty snapshot is refused rather than performed, because the only thing it could do is wipe the screen.
 
-So the file I/O happens in Node instead. [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts) adds `GET`/`PUT /api/progress` to the dev *and* preview servers; the page just asks. That's what makes it automatic.
+**The save toast counts courses, it doesn't name the table.** `3 Courses Saved` — the destination is the app's bookkeeping. The reload toast does add one line the student can't see for themselves: *when* the copy being restored was taken.
 
-The trade-off: **it only works while a Vite server is running.** A `npm run build` copy served by anything else has no Node process, so the client falls back to one combined download and a manual multi-file picker. `ProgressApiUnavailableError` drives that, and it triggers on a non-JSON response too — a static host answers unknown routes with the SPA's HTML, so a 200 alone isn't proof the API is there.
+### Why this no longer needs a server
 
-⚠️ **Filenames arrive from the browser, so the server treats them as untrusted.** `isSafeProgressFileName` rejects separators, dot-segments, null bytes and non-`.json` names, and `resolveProgressPath` additionally verifies the resolved path's directory is the progress folder. Both are tested, including against the names `courseFileName` actually generates — a mismatch there would silently drop a course from the save.
+It used to write **one JSON file per course** into a `progresses/` folder, plus a `_manifest.json` carrying the semester list and the course order, through a `GET`/`PUT /api/progress` route added to the Vite dev server by a `vite-plugin-progress-files.ts`. A browser page cannot create or list a folder — that's a sandbox rule — so the file I/O had to happen in the Node process behind the page.
 
-⚠️ **The dev server binds to `host: "::"`** (all interfaces), so this write endpoint is reachable from your local network, not just your machine. Set `host: "localhost"` in `vite.config.ts` if that matters to you.
+That bought a readable copy on disk and cost a lot: it only worked while a Vite server was running (a `npm run build` copy fell back to one combined download and a manual multi-file picker), the snapshot was per-machine rather than per-account, filenames arriving from the browser were a path-traversal surface needing their own validation, and saving was a *folder mirror* — several writes plus a prune — so a partial save could leave an orphaned file for the next reload to turn back into a deleted course.
+
+A single upserted row removes all four. The whole `progresses/` mechanism is gone: the plugin, the filename generation and dedupe, the manifest, `ProgressApiUnavailableError` and the download/file-picker fallbacks. Course **order** and empty **semesters** — the two things the manifest existed for — need no special handling now, because one JSON array preserves order and the envelope already carries `semesters`.
+
+⚠️ A `progresses/` folder left over from before this change is **not** read by anything any more, and not migrated. It's gitignored and safe to delete once you've confirmed you don't want what's in it.
 
 ## 9. Known issues & technical debt
 
@@ -537,10 +541,8 @@ Ordered roughly by how likely each is to bite you.
 | Marks typed but breakdown still `—` | Non-numeric input never reached the store — `handleAchievedChange` drops `NaN` | [SubBreakdownRow.tsx](src/components/SubBreakdownRow.tsx) |
 | Wrong row got dropped by "drop lowest" | Ranking is by percentage, not raw marks lost (§6) | `sortByPercentage` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
 | Old saved data vanished after an update | `migrate` didn't recognise the shape — check the console and the `version` field | [courseStorage.ts](src/lib/courseStorage.ts), `migrate` |
-| Reload Progress wiped everything | It replaces, never merges (§8). A file that fails validation leaves data intact | `looksLikeProgress` in [progressFile.ts](src/lib/progressFile.ts) |
-| Save downloads a file instead of writing progresses/ | No Vite server behind the page — a static build has no Node process (§8) | `ProgressApiUnavailableError` |
-| A semester disappeared after reload | Its anchor is `_manifest.json`; check the folder has one and lists it (§4a, §8) | `persistedSemesters` in [semesters.ts](src/lib/semesters.ts) |
-| Courses came back in the wrong order | The manifest is missing or predates the course, so it fell back to filename order (§8) | `orderCourses` in [progressFile.ts](src/lib/progressFile.ts) |
+| Reload Progress wiped everything | It replaces, never merges (§8). An absent or empty snapshot is refused rather than restored | `parseProgressRow` in [supabaseProgress.ts](src/lib/supabaseProgress.ts) |
+| A semester disappeared after reload | Empty semesters ride on the snapshot's `semesters` list; check it was there when Save ran (§4a, §8) | `persistedSemesters` in [semesters.ts](src/lib/semesters.ts) |
 | A course's weights total 100 but the grade shows `—` | One of them is marked Bonus, so it doesn't count towards the 100% (§6) | `getTotalWeight` in [gradeCalculations.ts](src/lib/gradeCalculations.ts) |
 | Apply in Advanced options does nothing | A switched-on option has an empty box; the dialog says which (§7) | `policyDraftErrors` in [gradePolicies.ts](src/lib/gradePolicies.ts) |
 | A trash button doesn't delete anything | By design — it opens a confirmation first (§7) | [ConfirmDeleteDialog.tsx](src/components/ConfirmDeleteDialog.tsx) |
@@ -548,10 +550,9 @@ Ordered roughly by how likely each is to bite you.
 | The letter grade disagrees with the percentage | Expected — the letter follows the *rounded* grade, e.g. 79.6 → 80 → A- (§6) | `toOfficialGrade` in [gradeFormatting.ts](src/lib/gradeFormatting.ts) |
 | Old courses missing from the panel | They should be under **Unassigned**; check `migrate` backfilled `semester` to `''` | [courseStorage.ts](src/lib/courseStorage.ts) |
 | New Course does nothing | No semester selected — courses must belong to one (§4a) | `openNewCourse` in [Index.tsx](src/pages/Index.tsx) |
-| A course vanishes from the save | Its generated filename failed the server's safety check; the two must agree | `courseFileName` vs `isSafeProgressFileName` |
-| A deleted course came back after reload | Stale-file pruning didn't run, or the folder holds files from an older save | `writeProgressFiles` in [vite-plugin-progress-files.ts](vite-plugin-progress-files.ts) |
-| Saving with no courses left the old files | Save must always run, even for an empty list — a "nothing to save" guard reintroduces this | `saveProgress` in [useProgressFile.ts](src/hooks/useProgressFile.ts) |
-| Two courses with the same name overwrite each other | Filename dedupe must be case-insensitive | `courseFileName` in [progressFile.ts](src/lib/progressFile.ts) |
+| A deleted course came back after reload | The snapshot predates the deletion — Save Progress replaces it whole, so re-saving fixes it (§8) | `supabaseProgressStorage.save` in [supabaseProgress.ts](src/lib/supabaseProgress.ts) |
+| Saving with no courses left the old snapshot | Save must always run, even for an empty list — a "nothing to save" guard reintroduces this | `saveProgress` in [useProgressSnapshot.ts](src/hooks/useProgressSnapshot.ts) |
+| Save/Reload Progress errors with a missing-table message | `0002_user_progress.sql` hasn't been run in the Supabase project (§8) | [0002_user_progress.sql](supabase/migrations/0002_user_progress.sql) |
 | The tab icon is stale after replacing it | Bump the `?v=` on the icon link; browsers cache favicons hard | [index.html](index.html) |
 | A long dropdown runs off screen | `SelectContent` must stay capped to `--radix-select-content-available-height` | local fix in [select.tsx](src/components/ui/select.tsx) |
 | Breakdown added to the wrong course | Each `CourseSection` owns its own `AddBreakdownDialog`; suspect one hoisted to a shared parent | [CourseSection.tsx](src/components/CourseSection.tsx) |

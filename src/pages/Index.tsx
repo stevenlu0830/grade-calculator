@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import { FullPageLoader } from '@/components/FullPageLoader';
 import { useGradeStore } from '@/hooks/useGradeStore';
 import { useLocalDataImport } from '@/hooks/useLocalDataImport';
-import { useProgressFile } from '@/hooks/useProgressFile';
+import { useProgressSnapshot } from '@/hooks/useProgressSnapshot';
 import { AccountMenu } from '@/components/AccountMenu';
 import { CourseSection } from '@/components/CourseSection';
 import { CourseToolbar } from '@/components/CourseToolbar';
@@ -14,7 +14,6 @@ import { SemesterPanel } from '@/components/SemesterPanel';
 import { Button } from '@/components/ui/button';
 import { CourseStorage } from '@/lib/courseStorage';
 import { DISPLAY_DECIMALS } from '@/lib/gradeFormatting';
-import { PROGRESS_FILE_ACCEPT } from '@/lib/progressFile';
 import { coursesIn, semesterLabel, visibleSemesters } from '@/lib/semesters';
 import { plural } from '@/lib/utils';
 import { GraduationCap, Plus, RefreshCw } from 'lucide-react';
@@ -73,7 +72,7 @@ const Index = ({ storage, user }: IndexProps) => {
     dismissImport();
   };
 
-  const { inputRef, saveProgress, reloadProgress, handleFileChange } = useProgressFile(
+  const { saveProgress, reloadProgress } = useProgressSnapshot(
     user.id,
     courses,
     savedSemesters,
@@ -156,15 +155,6 @@ const Index = ({ storage, user }: IndexProps) => {
     // than a `calc(100vh - <header height>)` because the header changes height
     // when it wraps on a narrow window, and that guess would then be wrong.
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <input
-        type="file"
-        ref={inputRef}
-        onChange={handleFileChange}
-        accept={PROGRESS_FILE_ACCEPT}
-        multiple
-        className="hidden"
-      />
-
       <NewCourseDialog
         open={newCourseOpen}
         onOpenChange={setNewCourseOpen}
