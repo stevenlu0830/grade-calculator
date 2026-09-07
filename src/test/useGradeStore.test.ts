@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { Course, GradeData } from '@/types/grades';
 import { CourseStorage } from '@/lib/courseStorage';
 import { advancedOptionUpdate, NO_POLICY } from '@/lib/gradePolicies';
+import { UNASSIGNED_SEMESTER } from '@/lib/semesters';
 import { useGradeStore, NewBreakdown } from '@/hooks/useGradeStore';
 
 interface MemoryStorage extends CourseStorage {
@@ -456,5 +457,223 @@ describe('importData', () => {
     );
 
     expect(result.current.courses.map(c => c.name)).toEqual(['Zoology', 'Anthropology']);
+  });
+});
+
+/**
+ * Every mutation reaches into one course, one breakdown, one row — and has to
+ * leave the rest untouched. A mis-scoped `.map` is invisible on the single-course
+ * fixtures above and quietly rewrites the wrong course as soon as there are two.
+ */
+describe('edits stay where they were aimed', () => {
+  /** Two courses, each with one breakdown of two rows. */
+  const twoCourses = (): Course[] =>
+    ['a', 'b'].map(key => ({
+      id: `course-${key}`,
+      name: `Course ${key}`,
+      semester: '2026 Winter Term 1',
+      breakdowns: [
+        {
+          id: `breakdown-${key}`,
+          courseId: `course-${key}`,
+          name: 'Assignments',
+          weight: 100,
+          ...NO_POLICY,
+          subBreakdownLabel: 'Assignment',
+          subBreakdowns: [
+            {
+              id: `sub-${key}-1`,
+              breakdownId: `breakdown-${key}`,
+              name: 'Assignment 1',
+              achievedMarks: 8,
+              fullMarks: 10,
+            },
+            {
+              id: `sub-${key}-2`,
+              breakdownId: `breakdown-${key}`,
+              name: 'Assignment 2',
+              achievedMarks: 9,
+              fullMarks: 10,
+            },
+          ],
+        },
+      ],
+    }));
+
+  const renderTwo = () => renderStore(memoryStorage({ courses: twoCourses() }));
+  /** The untouched course, which every case below asserts is unchanged. */
+  const other = (result: { current: { courses: Course[] } }) =>
+    result.current.courses.find(c => c.id === 'course-b');
+
+  it('renames only the named course', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.updateCourseName('course-a', 'Renamed'));
+
+    expect(result.current.courses[0].name).toBe('Renamed');
+    expect(other(result)?.name).toBe('Course b');
+  });
+
+  it('deletes only the named course', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.deleteCourse('course-a'));
+
+    expect(result.current.courses.map(c => c.id)).toEqual(['course-b']);
+  });
+
+  it('adds a breakdown to only the named course', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.addBreakdown('course-a', newBreakdown()));
+
+    expect(result.current.courses[0].breakdowns).toHaveLength(2);
+    expect(other(result)?.breakdowns).toHaveLength(1);
+  });
+
+  it('deletes a breakdown from only the named course', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.deleteBreakdown('course-a', 'breakdown-a'));
+
+    expect(result.current.courses[0].breakdowns).toEqual([]);
+    expect(other(result)?.breakdowns).toHaveLength(1);
+  });
+
+  it('leaves a breakdown alone when the id names another one', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.deleteBreakdown('course-a', 'breakdown-b'));
+
+    expect(result.current.courses[0].breakdowns).toHaveLength(1);
+  });
+
+  it('updates only the named breakdown', async () => {
+    const { result } = await renderTwo();
+    act(() => result.current.addBreakdown('course-a', newBreakdown({ name: 'Labs' })));
+    const labsId = result.current.courses[0].breakdowns[1].id;
+
+    act(() => result.current.updateBreakdown('course-a', labsId, { weight: 55 }));
+
+    expect(result.current.courses[0].breakdowns[0].weight).toBe(100);
+    expect(result.current.courses[0].breakdowns[1].weight).toBe(55);
+  });
+
+  it('adds a row to only the named breakdown', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.addSubBreakdown('course-a', 'breakdown-a'));
+
+    expect(result.current.courses[0].breakdowns[0].subBreakdowns).toHaveLength(3);
+    expect(other(result)?.breakdowns[0].subBreakdowns).toHaveLength(2);
+  });
+
+  it('updates only the named row', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.updateSubBreakdown('course-a', 'breakdown-a', 'sub-a-2', { achievedMarks: 3 }));
+
+    const rows = result.current.courses[0].breakdowns[0].subBreakdowns;
+    expect(rows.map(r => r.achievedMarks)).toEqual([8, 3]);
+    expect(other(result)?.breakdowns[0].subBreakdowns.map(r => r.achievedMarks)).toEqual([8, 9]);
+  });
+
+  it('deletes only the named row', async () => {
+    const { result } = await renderTwo();
+
+    act(() => result.current.deleteSubBreakdown('course-a', 'breakdown-a', 'sub-a-1'));
+
+    expect(result.current.courses[0].breakdowns[0].subBreakdowns.map(r => r.id)).toEqual(['sub-a-2']);
+    expect(other(result)?.breakdowns[0].subBreakdowns).toHaveLength(2);
+  });
+});
+
+describe('recovering from a failed save', () => {
+  it('clears the warning once a later save gets through', async () => {
+    // The toast is driven off `saveError`, so leaving it set after a successful
+    // write would tell a student their work isn't saving when it is.
+    const storage = memoryStorage();
+    let refuse = true;
+    storage.save = async (data: GradeData) => {
+      if (refuse) throw new Error('network down');
+      storage.saved = data;
+    };
+    const { result } = await renderStore(storage);
+
+    act(() => result.current.addSemester('2026 Winter Term 1'));
+    await settle();
+    expect(result.current.saveError?.message).toBe('network down');
+
+    refuse = false;
+    act(() => result.current.addSemester('2025 Summer Term 1'));
+    await settle();
+
+    expect(result.current.saveError).toBeNull();
+  });
+
+  it('reports a thrown non-Error as one, so the toast has something to say', async () => {
+    const storage = memoryStorage();
+    storage.save = async () => {
+      throw 'offline';
+    };
+    const { result } = await renderStore(storage);
+
+    act(() => result.current.addSemester('2026 Winter Term 1'));
+    await settle();
+
+    expect(result.current.saveError).toBeInstanceOf(Error);
+    expect(result.current.saveError?.message).toBe('offline');
+  });
+});
+
+describe('a load that lands after the store has moved on', () => {
+  /** Storage whose read is held open until the test releases it. */
+  const heldStorage = () => {
+    const box = memoryStorage();
+    let release!: (data: GradeData) => void;
+    let reject!: (error: unknown) => void;
+    box.load = () =>
+      new Promise<GradeData>((resolve, rejectIt) => {
+        release = resolve;
+        reject = rejectIt;
+      });
+    return { box, release: (data: GradeData) => release(data), fail: (e: unknown) => reject(e) };
+  };
+
+  it('ignores a read that resolves after unmount', async () => {
+    // Signing out mid-load; setting state here would be a warning about a
+    // component that is gone.
+    const { box, release } = heldStorage();
+    const view = renderHook(() => useGradeStore(box));
+
+    view.unmount();
+    await act(async () => {
+      release({ courses: [], semesters: ['2026 Winter Term 1'] });
+      await Promise.resolve();
+    });
+  });
+
+  it('ignores a read that fails after unmount', async () => {
+    const { box, fail } = heldStorage();
+    const view = renderHook(() => useGradeStore(box));
+
+    view.unmount();
+    await act(async () => {
+      fail(new Error('network down'));
+      await Promise.resolve();
+    });
+  });
+});
+
+describe('deleting the unassigned bucket', () => {
+  it('takes courses that were saved with no semester field at all', async () => {
+    // Pre-semester data has no `semester` key, so the filter has to read it
+    // through `?? UNASSIGNED_SEMESTER` or the course would survive the delete.
+    const legacy = { id: 'c1', name: 'MATH 100', breakdowns: [] } as unknown as Course;
+    const { result } = await renderStore(memoryStorage({ courses: [legacy] }));
+
+    act(() => result.current.deleteSemester(UNASSIGNED_SEMESTER));
+
+    expect(result.current.courses).toEqual([]);
   });
 });

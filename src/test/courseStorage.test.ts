@@ -355,3 +355,68 @@ describe('migrate', () => {
     });
   });
 });
+
+/**
+ * Every array in a saved payload is read through `?? []`, because a hand-edited
+ * row — or one written by a build that hadn't grown the field yet — can be
+ * missing any of them. Losing a course to a missing key would be worse than
+ * losing the field.
+ */
+describe('payloads with whole arrays missing', () => {
+  it('opens a v1 course with no components list', () => {
+    const { courses } = migrate([{ id: 'c1', name: 'MATH 100' }]);
+
+    expect(courses[0]).toMatchObject({ name: 'MATH 100', breakdowns: [] });
+  });
+
+  it('mints ids for a v1 payload that carried none', () => {
+    // Ids are what every `.map`/`.filter` in the store matches on, so a course
+    // saved without one has to be given one rather than left unaddressable.
+    const { courses } = migrate([
+      { name: 'MATH 100', components: [{ name: 'Labs', weight: 20, subComponents: [{ grade: 90 }] }] },
+    ]);
+
+    const breakdown = courses[0].breakdowns[0];
+    expect(courses[0].id).toBeTruthy();
+    expect(breakdown.id).toBeTruthy();
+    expect(breakdown.subBreakdowns[0].id).toBeTruthy();
+    expect(breakdown.subBreakdowns[0].breakdownId).toBe(breakdown.id);
+  });
+
+  it('opens a v1 component with no sub-components list', () => {
+    const { courses } = migrate([
+      { id: 'c1', name: 'MATH 100', components: [{ id: 'k1', name: 'Labs', weight: 20 }] },
+    ]);
+
+    expect(courses[0].breakdowns[0]).toMatchObject({ name: 'Labs', subBreakdowns: [] });
+  });
+
+  it('opens a current-envelope course with no breakdowns list', () => {
+    const { courses } = migrate({
+      version: SCHEMA_VERSION,
+      courses: [{ id: 'c1', name: 'MATH 100', semester: '2026 Winter Term 1' }],
+    });
+
+    expect(courses[0].breakdowns).toEqual([]);
+  });
+
+  it('opens a breakdown with no sub-breakdowns list', () => {
+    const { courses } = migrate({
+      version: SCHEMA_VERSION,
+      courses: [
+        {
+          id: 'c1',
+          name: 'MATH 100',
+          semester: '2026 Winter Term 1',
+          breakdowns: [{ id: 'b1', courseId: 'c1', name: 'Labs', weight: 20 }],
+        },
+      ],
+    });
+
+    expect(courses[0].breakdowns[0].subBreakdowns).toEqual([]);
+  });
+
+  it('reads an envelope whose courses key is not a list as empty', () => {
+    expect(migrate({ version: SCHEMA_VERSION, courses: 'nope' }).courses).toEqual([]);
+  });
+});

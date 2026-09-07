@@ -688,3 +688,51 @@ describe('unset full marks', () => {
     expect(getEnteredMarks(makeBreakdown([[null, null]]).subBreakdowns)).toEqual([]);
   });
 });
+
+/**
+ * A policy switched on with no number behind it — the shape a breakdown ends up
+ * in when a draft is applied without checking `policyDraftErrors` first. The
+ * calculator must still produce a grade rather than `NaN`.
+ */
+describe('an incomplete policy', () => {
+  it('drops nothing when drop-lowest has no count', () => {
+    const breakdown = makeBreakdown(
+      [
+        [4, 10],
+        [9, 10],
+      ],
+      { dropLowestCount: null }
+    );
+
+    expect(calculateBreakdownGrade(breakdown)).toBe(65);
+  });
+
+  it('downweights nothing when the count and percentage are missing', () => {
+    const breakdown = makeBreakdown(
+      [
+        [4, 10],
+        [9, 10],
+      ],
+      { downweightLowestCount: null, downweightPercent: null }
+    );
+
+    expect(calculateBreakdownGrade(breakdown)).toBe(65);
+  });
+});
+
+describe('getBonusWeight', () => {
+  const bonus = (weight: number | null): Breakdown =>
+    makeBreakdown([], { weight, isBonus: true });
+
+  it('sums the bonus weights', () => {
+    expect(getBonusWeight([bonus(5), bonus(2)])).toBe(7);
+  });
+
+  it('counts a bonus breakdown with no weight yet as nothing', () => {
+    expect(getBonusWeight([bonus(null), bonus(5)])).toBe(5);
+  });
+
+  it('is zero for a course with no bonus at all', () => {
+    expect(getBonusWeight([makeBreakdown([], { weight: 100 })])).toBe(0);
+  });
+});

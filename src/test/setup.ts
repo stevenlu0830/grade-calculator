@@ -44,3 +44,40 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => {},
   }),
 });
+
+/**
+ * Browser APIs the Radix primitives reach for that jsdom doesn't implement.
+ *
+ * Without them, opening a dialog or a select throws rather than failing an
+ * assertion, which makes every component test look like a component bug. Each
+ * is a no-op: the tests assert on structure and behaviour, never on layout,
+ * which jsdom couldn't tell them about anyway.
+ */
+if (!('ResizeObserver' in globalThis)) {
+  Object.defineProperty(globalThis, 'ResizeObserver', {
+    configurable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
+}
+
+if (!('PointerEvent' in globalThis)) {
+  Object.defineProperty(globalThis, 'PointerEvent', {
+    configurable: true,
+    value: class extends MouseEvent {},
+  });
+}
+
+for (const [name, value] of [
+  ['scrollIntoView', () => {}],
+  ['hasPointerCapture', () => false],
+  ['setPointerCapture', () => {}],
+  ['releasePointerCapture', () => {}],
+] as const) {
+  if (!(name in Element.prototype)) {
+    Object.defineProperty(Element.prototype, name, { configurable: true, value });
+  }
+}

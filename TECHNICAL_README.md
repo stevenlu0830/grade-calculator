@@ -27,7 +27,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
 | Auth & data | Supabase (`@supabase/supabase-js` 2) | Email + password; one `jsonb` row per user, guarded by RLS (§5a) |
-| Tests | Vitest 3 + jsdom + Testing Library | 450 tests in `src/test/`; React components untested |
+| Tests | Vitest 3 + jsdom + Testing Library | 774 tests in `src/test/`; 100% of statements and lines, `npm run test:coverage` |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template. `jspdf`/`jspdf-autotable` are now unused too, since PDF export was removed — still in `package.json`, no longer in the bundle.
 
@@ -42,6 +42,7 @@ npm run dev    # http://localhost:8080 — opens your default browser automatica
 npm run build  # → dist/
 npm run lint
 npm test       # vitest run
+npm run test:coverage   # the same, with a coverage table and coverage/index.html
 ```
 
 ⚠️ `npm i` fails with `ERESOLVE` on a clean checkout: `@vitejs/plugin-react-swc` declares a peer of `vite ^4 || ^5 || ^6 || ^7` and this project runs vite 8. Use `npm i --legacy-peer-deps` until the plugin is updated.
@@ -475,7 +476,7 @@ A single upserted row removes all four. The whole `progresses/` mechanism is gon
 Ordered roughly by how likely each is to bite you.
 
 1. **`strict: false`** in [tsconfig.app.json](tsconfig.app.json), plus `noImplicitAny: false`, `strictNullChecks: false`, and unused-vars linting disabled. Given how much logic hinges on `null` vs `0` (§4), the compiler is not protecting the codebase's central invariant. Enabling `strictNullChecks` is the highest-leverage remaining cleanup — and will surface real findings.
-3. **No component test coverage.** `src/lib/*` and the store hook are well covered (450 tests); every React *component* is untested — including `AuthForm`, whose sign-in/register toggle and error rendering are verified by hand only. The dialogs and `AdvancedOptions` carry the most branching.
+3. ~~**No component test coverage.**~~ Resolved: every component, hook and page now has one, and `npm run test:coverage` reports 100% of statements and lines outside the vendored shadcn kit. What is left uncovered is defensive — `typeof window === 'undefined'` guards, and `isNaN` checks behind an `<input type="number">` that can never hold a non-number.
 3b. **`@testing-library/dom` was a missing peer dependency.** RTL 16 requires it, and without it `useGradeStore.test.ts` couldn't even be imported — 23 tests had been silently unrunnable. Now installed as a devDependency. Watch for the same thing if RTL is upgraded.
 4. **Dark mode is unreachable.** Full `.dark` variable set in `index.css` and `darkMode: ["class"]` in Tailwind, but nothing ever adds the class; `next-themes` is installed and unmounted. Wiring a `ThemeProvider` is close to free.
 5. **Duplicate lockfiles.** `bun.lock` and `package-lock.json` are both present, alongside a `vite` `^5.4.19 → ^8.2.0` bump. Decide on one package manager and commit the matching lockfile.

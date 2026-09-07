@@ -546,3 +546,36 @@ describe('policyFromDraft', () => {
     expect(policyFromDraft({ ...NO_POLICY_DRAFT, isBonus: true }).isBonus).toBe(true);
   });
 });
+
+/**
+ * A draft committed with a switched-on option left blank. Callers reject that
+ * through `policyDraftErrors` first, so these only pin down that the fallback
+ * is the documented default rather than `NaN` — a policy nobody can read.
+ */
+describe('policyFromDraft with an empty box', () => {
+  it('falls back to the default downweight percentage', () => {
+    const draft = {
+      ...NO_POLICY_DRAFT,
+      downweight: true,
+      downweightLowestCount: '1',
+      downweightPercent: '',
+    };
+
+    expect(policyFromDraft(draft).downweightPercent).toBe(DEFAULT_DOWNWEIGHT_PERCENT);
+  });
+
+  it('falls back to the default counts', () => {
+    expect(
+      policyFromDraft({ ...NO_POLICY_DRAFT, dropLowest: true, dropLowestCount: '' })
+        .dropLowestCount
+    ).toBe(DEFAULT_DROP_LOWEST_COUNT);
+    expect(
+      policyFromDraft({
+        ...NO_POLICY_DRAFT,
+        downweight: true,
+        downweightLowestCount: '',
+        downweightPercent: '50',
+      }).downweightLowestCount
+    ).toBe(DEFAULT_DOWNWEIGHT_COUNT);
+  });
+});

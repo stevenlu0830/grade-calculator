@@ -58,3 +58,17 @@ describe('describeHashError', () => {
     expect(describeHashError('#error_code=otp_expired')).toBeTruthy();
   });
 });
+
+describe('a fragment handed over without its leading #', () => {
+  // `window.location.hash` includes the `#`, but the parsing is shared and a
+  // caller passing the bare fragment must read the same either way.
+  it('reads a recovery link the same', () => {
+    expect(describeHashError('error=access_denied&error_description=Email+link+is+invalid')).toBe(
+      'Email link is invalid'
+    );
+  });
+
+  it('reads a working link the same', () => {
+    expect(describeHashError('type=recovery&access_token=abc')).toBeNull();
+  });
+});

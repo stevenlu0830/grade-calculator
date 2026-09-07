@@ -149,3 +149,13 @@ describe('describeAuthError', () => {
     expect(describeAuthError(new Error(''))).toBeTruthy();
   });
 });
+
+describe('describeAuthError, the server-side password rule', () => {
+  it('restates Supabase’s length complaint with the number this app uses', () => {
+    // Client-side validation normally catches this first; the server still
+    // refuses independently, and its wording carries its own minimum.
+    expect(
+      describeAuthError(new Error('Password should be at least 6 characters.'))
+    ).toBe(`Passwords must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+  });
+});

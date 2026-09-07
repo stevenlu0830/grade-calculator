@@ -232,7 +232,9 @@ shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 
-## Tests — `src/test/`, 378 across 13 files
+## Tests — `src/test/`, 774 across 46 files
+
+`npm run test:coverage` writes a per-file table plus `coverage/index.html`. The vendored `src/components/ui/**`, `src/types/**` and `src/main.tsx` are excluded; everything else is at 100% of statements and lines. What is left uncovered is defensive: `typeof window === 'undefined'` guards, and `isNaN` checks behind an `<input type="number">` that can never hold a non-number.
 
 New: [auth](src/test/auth.test.ts) (`validateCredentials`, `describeAuthError`) · [supabaseCourseStorage](src/test/supabaseCourseStorage.test.ts) (row round trip, missing row, older schema, unreadable row) · [debouncedStorage](src/test/debouncedStorage.test.ts) (coalescing, waiter settlement, flush/cancel, mid-flight saves — uses fake timers).
 
@@ -242,7 +244,21 @@ New: [auth](src/test/auth.test.ts) (`validateCredentials`, `describeAuthError`) 
 
 All tests live here, one file per module, importing via `@/lib/...`:
 [gradeCalculations](src/test/gradeCalculations.test.ts) · [gradePolicies](src/test/gradePolicies.test.ts) · [gradeFormatting](src/test/gradeFormatting.test.ts) · [breakdownPresets](src/test/breakdownPresets.test.ts) · [courseStorage](src/test/courseStorage.test.ts) (v1 migration) · [supabaseProgress](src/test/supabaseProgress.test.ts) (snapshot round trip, never-saved vs empty, timestamps, older snapshots) · [useGradeStore](src/test/useGradeStore.test.ts) (hook driven via `renderHook` with in-memory storage; semester lifecycle and import).
-[utils](src/test/utils.test.ts) covers `clamp` and `plural`. [setup.ts](src/test/setup.ts) provides `jest-dom` + a `matchMedia` stub. Untested: React components (the store hook is now covered).
+[utils](src/test/utils.test.ts) covers `clamp` and `plural`.
+
+The effectful wrappers are tested apart from their pure builders, against a fake client: [supabaseClients](src/test/supabaseClients.test.ts) (which table, whose row, upsert key, and that a failed read throws) · [authRequests](src/test/authRequests.test.ts) (trimming, the emailed return URL, every failure rethrown) · [supabaseModule](src/test/supabaseModule.test.ts) (the env read, re-imported per case) · [localCourseStorage](src/test/localCourseStorage.test.ts) (the log-don't-throw half) · [id](src/test/id.test.ts).
+
+Hooks: [useAccountStorage](src/test/useAccountStorage.test.ts) (stable identity, `pagehide` and unmount flushes) · [useSession](src/test/useSession.test.ts) · [useProgressSnapshot](src/test/useProgressSnapshot.test.ts) · [useLocalDataImport](src/test/localDataImport.test.ts) · the two vendored shadcn hooks, [use-mobile](src/test/useMobile.test.ts) and [use-toast](src/test/useToast.test.ts).
+
+Components, one file each, named for the component: [gradeDisplay](src/test/gradeDisplay.test.tsx) · [numberInput](src/test/numberInput.test.tsx) · [confirmDeleteDialog](src/test/confirmDeleteDialog.test.tsx) · [newCourseDialog](src/test/newCourseDialog.test.tsx) · [addSemesterDialog](src/test/addSemesterDialog.test.tsx) · [addBreakdownDialog](src/test/addBreakdownDialog.test.tsx) · [advancedOptions](src/test/advancedOptions.test.tsx) (field group + dialog) · [changeFullMarkDialog](src/test/changeFullMarkDialog.test.tsx) · [importLocalDataDialog](src/test/importLocalDataDialog.test.tsx) · [accountMenu](src/test/accountMenu.test.tsx) · [subBreakdownRow](src/test/subBreakdownRow.test.tsx) · [breakdownCard](src/test/breakdownCard.test.tsx) · [courseSection](src/test/courseSection.test.tsx) · [semesterPanel](src/test/semesterPanel.test.tsx) · [resetPasswordForm](src/test/resetPasswordForm.test.tsx) · [authFormPasswordReset](src/test/authFormPasswordReset.test.tsx) · [staticScreens](src/test/staticScreens.test.tsx) (the four with no state of their own).
+
+Pages: [indexPage](src/test/indexPage.test.tsx) drives the whole screen end to end against in-memory storage · [app](src/test/app.test.tsx) covers the four-way auth gate and its ordering · [notFound](src/test/notFound.test.tsx).
+
+⚠️ [setup.ts](src/test/setup.ts) provides `jest-dom`, a `localStorage` and a `matchMedia` stub, plus no-op `ResizeObserver` / `PointerEvent` / pointer-capture / `scrollIntoView` shims. Radix reaches for those and jsdom has none of them, so without the shims a dialog or select **throws** rather than failing an assertion — which reads as a component bug.
+
+⚠️ Radix triggers don't open on a `fireEvent.click`: a select wants `keyDown` `ArrowDown`, a dropdown menu wants `keyDown` `Enter`. Both are pointer-driven, and jsdom has no real pointer events.
+
+⚠️ An `<input type="number">` sanitises anything unparseable to `''`, so the `isNaN` guards behind one can't be reached through the DOM — and `min={0}` makes the browser block the submit before a handler sees a negative value. Tests assert what actually happens rather than pretending otherwise.
 
 ## Build & config
 

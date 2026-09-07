@@ -273,3 +273,50 @@ describe('semesterYearOptions', () => {
     }
   });
 });
+
+/**
+ * Every read of `course.semester` goes through `?? UNASSIGNED_SEMESTER`, because
+ * courses saved before semesters existed have no field at all — and `undefined`
+ * would match nothing rather than falling into the unassigned bucket.
+ */
+describe('courses saved before semesters existed', () => {
+  /** A course as an older build wrote it: no `semester` key whatsoever. */
+  const legacy = (name: string): Course =>
+    ({ id: `id-${name}`, name, breakdowns: [] }) as unknown as Course;
+
+  it('files a course with no semester field under unassigned', () => {
+    expect(semestersFromCourses([legacy('MATH 100')])).toEqual([UNASSIGNED_SEMESTER]);
+  });
+
+  it('counts it in the unassigned bucket', () => {
+    expect(countCoursesIn([legacy('MATH 100'), course('CPSC 121', '2026 Winter Term 1')], UNASSIGNED_SEMESTER))
+      .toBe(1);
+  });
+
+  it('shows it when the unassigned bucket is selected', () => {
+    expect(coursesIn([legacy('MATH 100')], UNASSIGNED_SEMESTER).map(c => c.name)).toEqual([
+      'MATH 100',
+    ]);
+  });
+});
+
+describe('sorting labels nothing can parse', () => {
+  it('falls back to alphabetical between two of them', () => {
+    // Neither is a semester, so there is no chronology to sort by — but the
+    // order still has to be stable, or the panel reshuffles on every render.
+    expect(compareSemestersDescending('Zed', 'Alpha')).toBeGreaterThan(0);
+    expect(compareSemestersDescending('Alpha', 'Zed')).toBeLessThan(0);
+    expect(compareSemestersDescending('Alpha', 'Alpha')).toBe(0);
+  });
+
+  it('sorts an unparseable label below a real semester, either way round', () => {
+    expect(compareSemestersDescending(UNASSIGNED_SEMESTER, '2026 Winter Term 1')).toBeGreaterThan(0);
+    expect(compareSemestersDescending('2026 Winter Term 1', UNASSIGNED_SEMESTER)).toBeLessThan(0);
+  });
+
+  it('leaves legacy courses at the bottom of the panel', () => {
+    const sorted = visibleSemesters([], ['', '2025 Summer Term 1', '2026 Winter Term 1']);
+
+    expect(sorted.at(-1)).toBe(UNASSIGNED_SEMESTER);
+  });
+});

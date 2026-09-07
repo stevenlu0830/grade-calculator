@@ -68,10 +68,15 @@ If the app shows a "Supabase isn't configured yet" screen, either `.env.local` i
 <summary>Other commands</summary>
 
 ```bash
-npm run build   # production build into dist/
-npm run lint    # lint the source
-npm test        # run the test suite
+npm run build          # production build into dist/
+npm run lint           # lint the source
+npm test               # run the test suite
+npm run test:coverage  # run it with a coverage report
 ```
+
+`npm run test:coverage` prints a per-file table of statement, branch, function and
+line coverage, and writes a browsable HTML report to `coverage/index.html`. The
+vendored shadcn primitives in `src/components/ui/` are left out of it.
 </details>
 
 ## Signing in
