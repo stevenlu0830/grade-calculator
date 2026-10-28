@@ -39,7 +39,7 @@ pages / components  →  hooks  →  lib (domain + format + io)  →  types
 
 ## Entry points
 
-- [index.html](index.html) — Vite shell; mounts `#root`. Declares the favicon **explicitly** (`/favicon.png?v=2`) rather than relying on the implicit `/favicon.ico` lookup, which cached hard enough to keep serving a stale icon. Bump the `?v=` when replacing the icon.
+- [index.html](index.html) — Vite shell; mounts `#root`. Declares the favicon **explicitly** (`/favicon.png?v=2`) rather than relying on the implicit `/favicon.ico` lookup, which cached hard enough to keep serving a stale icon. Bump the `?v=` when replacing the icon. The iOS home-screen icon is a separate file, `/apple-touch-icon.png?v=1` (Flaticon exam icon by Awicon; attribution in the comment above the link).
 - [src/main.tsx](src/main.tsx) — `createRoot(...).render(<App />)`; imports `index.css`.
 - [src/App.tsx](src/App.tsx) — providers `QueryClientProvider` → `TooltipProvider` → `Toaster` + `Sonner` → `BrowserRouter` → `AuthGate`.
   - `AuthGate` picks one of four: `SupabaseSetupNotice` (no env), `FullPageLoader` (session loading), `Auth` (signed out), `SignedInApp`.
