@@ -18,8 +18,8 @@ interface Contact {
   href: string | null;
 }
 
-// Fill these in: set `text` to what should be shown and `href` to where it goes
-// (a `mailto:` address for the email).
+// `text` is what's shown and `href` is where it goes (a `mailto:` address for the
+// email). An `href` of `null` shows the text unlinked.
 const CONTACTS: Contact[] = [
   { label: 'GitHub', icon: Github, text: 'https://github.com/stevenlu0830', href: 'https://github.com/stevenlu0830' },
   { label: 'LinkedIn', icon: Linkedin, text: 'https://www.linkedin.com/in/stevenlu0830/', href: 'https://www.linkedin.com/in/stevenlu0830/' },
@@ -67,8 +67,10 @@ export function AboutDialog({ className, contacts = CONTACTS }: AboutDialogProps
         </Button>
       </DialogTrigger>
       {/* Inset from the edges on a phone too, so it reads as a small window
-          rather than a sheet. */}
-      <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-lg">
+          rather than a sheet. Wide enough for the longest contact URL; the
+          `minmax(0,1fr)` column is what lets a longer one truncate instead of
+          widening the grid and pushing every row past the box's edge. */}
+      <DialogContent className="w-[calc(100%-2rem)] max-w-xl grid-cols-[minmax(0,1fr)] rounded-lg">
         <DialogHeader>
           <DialogTitle>About UBC Grade Calculator</DialogTitle>
           <DialogDescription>

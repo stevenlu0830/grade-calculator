@@ -6,9 +6,8 @@ import { Github, Mail } from 'lucide-react';
 /**
  * The info button on the sign-in screen and the "about" it opens.
  *
- * The contacts are placeholders until the author fills them in, so what matters
- * is that an unfilled one shows as text rather than a link to nowhere, and that
- * a filled one becomes a real link.
+ * What matters about the contacts is that a filled-in one becomes a real link,
+ * and that one left unfilled shows as text rather than a link to nowhere.
  */
 
 afterEach(cleanup);
@@ -44,7 +43,7 @@ describe('AboutDialog', () => {
     }
   });
 
-  it('lists every contact, unlinked while it is still a placeholder', () => {
+  it('lists every contact, each one a link', () => {
     render(<AboutDialog />);
 
     open();
@@ -53,11 +52,10 @@ describe('AboutDialog', () => {
     for (const label of ['GitHub', 'LinkedIn', 'Email', 'Personal Profile']) {
       expect(within(dialog).getByText(label)).toBeTruthy();
     }
-    expect(within(dialog).getAllByText('[placeholder]')).toHaveLength(4);
-    expect(within(dialog).queryAllByRole('link')).toHaveLength(0);
+    expect(within(dialog).getAllByRole('link')).toHaveLength(4);
   });
 
-  it('links a contact once it has somewhere to go', () => {
+  it('links a contact only once it has somewhere to go', () => {
     render(
       <AboutDialog
         contacts={[
@@ -74,6 +72,8 @@ describe('AboutDialog', () => {
     // A new tab, so following it doesn't navigate away from the sign-in form.
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
+    // The unfilled one is still shown, just not as a link to nowhere.
+    expect(screen.getByText('[placeholder]').tagName).toBe('SPAN');
     expect(screen.getAllByRole('link')).toHaveLength(1);
   });
 });
