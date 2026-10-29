@@ -45,7 +45,9 @@ export function SemesterPanel({
     // wider is empty space taken from the courses beside it. The panel scrolls
     // on its own now that the page doesn't.
     <aside className="w-40 shrink-0 overflow-y-auto border-r border-border bg-card/40">
-      <div className="p-2 space-y-2">
+      {/* `pb-16` so a long list can scroll its last row clear of the guide
+          button that `Index` fixes over this panel's bottom-left corner. */}
+      <div className="p-2 pb-16 space-y-2">
         <Button size="sm" onClick={onAddSemester} className="w-full px-2 text-xs">
           <Plus className="h-3.5 w-3.5 mr-1" />
           Add Semester

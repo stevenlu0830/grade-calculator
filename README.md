@@ -108,6 +108,7 @@ If you used this app before it had accounts, it offers to bring those courses ac
 
 - The **left panel** lists your semesters. Clicking one shows its courses.
 - The **courses panel** holds one card per course, side by side. Scroll down inside a card to reach the rest of a long course; the course name and final grade stay pinned to the top of the panel while you do, so you can watch the final grade move as you type. Scroll sideways to reach your other courses.
+- The **ⓘ** button at the bottom left opens a short guide: what the app does, then one page per feature. Use **Back** and **Next**, or the dots to jump straight to one.
 
 ## Features, and how to use them
 

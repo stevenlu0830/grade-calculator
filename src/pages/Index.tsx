@@ -7,6 +7,7 @@ import { useProgressSnapshot } from '@/hooks/useProgressSnapshot';
 import { AccountMenu } from '@/components/AccountMenu';
 import { CourseSection } from '@/components/CourseSection';
 import { CourseToolbar } from '@/components/CourseToolbar';
+import { FeatureGuideDialog } from '@/components/FeatureGuideDialog';
 import { ImportLocalDataDialog } from '@/components/ImportLocalDataDialog';
 import { NewCourseDialog } from '@/components/NewCourseDialog';
 import { AddSemesterDialog } from '@/components/AddSemesterDialog';
@@ -174,6 +175,9 @@ const Index = ({ storage, user }: IndexProps) => {
         onImport={handleImportLocalData}
         onDecline={dismissImport}
       />
+
+      {/* Fixed over the bottom of the semester panel, which leaves room for it. */}
+      <FeatureGuideDialog className="fixed bottom-4 left-4 rounded-full" />
 
       <header className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm">
         <div className="container max-w-6xl mx-auto px-4 py-4">
