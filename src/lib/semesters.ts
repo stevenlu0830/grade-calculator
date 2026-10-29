@@ -13,10 +13,10 @@ import { Course, Term } from '@/types/grades';
  */
 
 /**
- * UBC's four terms, in the order they occur within an academic year.
+ * UBC's four terms, in the order the Add Semester dialog lists them.
  *
- * Winter Term 1 starts in September, Winter Term 2 in January, then the two
- * summer terms — so this order is chronological, not alphabetical.
+ * This is not the order they happen in under one year label — see
+ * `TERM_CHRONOLOGY` for that, which is what sorting uses.
  */
 export const TERMS: readonly Term[] = [
   'Winter Term 1',
@@ -24,6 +24,20 @@ export const TERMS: readonly Term[] = [
   'Summer Term 1',
   'Summer Term 2',
 ] as const;
+
+/**
+ * The terms in the order they happen under one year label, earliest first.
+ *
+ * UBC names a session by the year it starts in: 2024S runs May–August 2024,
+ * and 2024W runs from September 2024 (Term 1) into April 2025 (Term 2). So
+ * under the same year, both summer terms come before both winter terms.
+ */
+const TERM_CHRONOLOGY: readonly Term[] = [
+  'Summer Term 1',
+  'Summer Term 2',
+  'Winter Term 1',
+  'Winter Term 2',
+];
 
 /** Courses carried over from before semesters existed. */
 export const UNASSIGNED_SEMESTER = '';
@@ -63,7 +77,7 @@ export function compareSemestersDescending(a: string, b: string): number {
   if (!right) return -1;
 
   if (left.year !== right.year) return right.year - left.year;
-  return TERMS.indexOf(right.term) - TERMS.indexOf(left.term);
+  return TERM_CHRONOLOGY.indexOf(right.term) - TERM_CHRONOLOGY.indexOf(left.term);
 }
 
 /** Every semester any course belongs to, most recent first. */

@@ -48,7 +48,7 @@ export interface Breakdown {
   subBreakdowns: SubBreakdown[];
 }
 
-/** UBC's four terms. See `TERMS` in `semesters.ts` for their ordering. */
+/** UBC's four terms. See `TERM_CHRONOLOGY` in `semesters.ts` for their ordering. */
 export type Term = 'Winter Term 1' | 'Winter Term 2' | 'Summer Term 1' | 'Summer Term 2';
 
 export interface Course {

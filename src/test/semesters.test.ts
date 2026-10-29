@@ -32,12 +32,6 @@ describe('TERMS', () => {
       'Summer Term 2',
     ]);
   });
-
-  it('is in chronological order within an academic year, not alphabetical', () => {
-    // Winter Term 1 starts in September, so it comes first — an alphabetical
-    // sort would wrongly put the Summer terms ahead of it.
-    expect(TERMS.indexOf('Winter Term 1')).toBeLessThan(TERMS.indexOf('Summer Term 1'));
-  });
 });
 
 describe('formatSemester', () => {
@@ -86,6 +80,8 @@ describe('compareSemestersDescending', () => {
   });
 
   it('orders terms within a year by when they happen, latest first', () => {
+    // 2026S runs May–August 2026, before 2026W starts that September — so
+    // under one year label the winter terms are the more recent ones.
     expect(
       sorted([
         '2026 Winter Term 1',
@@ -94,10 +90,30 @@ describe('compareSemestersDescending', () => {
         '2026 Summer Term 1',
       ])
     ).toEqual([
-      '2026 Summer Term 2',
-      '2026 Summer Term 1',
       '2026 Winter Term 2',
       '2026 Winter Term 1',
+      '2026 Summer Term 2',
+      '2026 Summer Term 1',
+    ]);
+  });
+
+  it('runs summer terms below that year’s winter terms and above the year before', () => {
+    expect(
+      sorted([
+        '2023 Winter Term 1',
+        '2024 Summer Term 1',
+        '2023 Winter Term 2',
+        '2024 Winter Term 1',
+        '2024 Summer Term 2',
+        '2024 Winter Term 2',
+      ])
+    ).toEqual([
+      '2024 Winter Term 2',
+      '2024 Winter Term 1',
+      '2024 Summer Term 2',
+      '2024 Summer Term 1',
+      '2023 Winter Term 2',
+      '2023 Winter Term 1',
     ]);
   });
 

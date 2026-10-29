@@ -99,9 +99,10 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 
 ## Semesters — `src/lib/semesters.ts`
 
-- `TERMS` — the four terms in **chronological order within an academic year** (Winter Term 1 starts in September), not alphabetical.
+- `TERMS` — the four terms in the order the Add Semester dialog lists them (W1, W2, S1, S2). ⚠️ **Not** the sort order.
+- `TERM_CHRONOLOGY` (private) — the order terms happen under one year label: S1, S2, W1, W2. UBC names a session by the year it starts, so 2024S (May–Aug 2024) precedes 2024W (Sep 2024–Apr 2025).
 - `formatSemester(year, term)` / `parseSemester(label)` — `"2026 Summer Term 2"` both ways.
-- `compareSemestersDescending` — most recent first; unparseable labels (including unassigned) sort **last**.
+- `compareSemestersDescending` — most recent first (2024W2, 2024W1, 2024S2, 2024S1, 2023W2, …); unparseable labels (including unassigned) sort **last**.
 - `semestersFromCourses` / `visibleSemesters(courses, semesters)` — the panel's list: the union of the saved list and whatever the courses name.
 - `persistedSemesters(courses, semesters)` — the same union **minus the unassigned bucket**, applied by the store on load and import. Data saved before the list existed heals into it instead of losing a semester when its last course goes.
 - `coursesIn` / `countCoursesIn` / `semesterLabel` — filtering and display; `''` renders as "Unassigned".

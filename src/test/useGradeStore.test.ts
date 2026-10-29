@@ -437,7 +437,7 @@ describe('importData', () => {
     );
 
     expect(result.current.courses.map(c => c.name)).toEqual(['MATH 100']);
-    expect(result.current.semesters).toEqual(['2025 Summer Term 1', '2025 Winter Term 1']);
+    expect(result.current.semesters).toEqual(['2025 Winter Term 1', '2025 Summer Term 1']);
   });
 
   it('keeps the imported course order rather than sorting it', async () => {
