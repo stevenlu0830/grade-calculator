@@ -27,7 +27,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
 | Auth & data | Supabase (`@supabase/supabase-js` 2) | Email + password; one `jsonb` row per user, guarded by RLS (§5a) |
-| Tests | Vitest 3 + jsdom + Testing Library | 778 tests in `src/test/`; 100% of statements and lines, `npm run test:coverage` |
+| Tests | Vitest 3 + jsdom + Testing Library | 783 tests in `src/test/`; 100% of statements and lines, `npm run test:coverage` |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template. `jspdf`/`jspdf-autotable` are now unused too, since PDF export was removed — still in `package.json`, no longer in the bundle.
 
@@ -357,7 +357,7 @@ Finally, delete the Final Exam breakdown. Total weight becomes 40, `areWeightsVa
 ```
 main.tsx → App.tsx (providers + router + auth gate)
              ├── SupabaseSetupNotice ....... no VITE_SUPABASE_* configured
-             ├── pages/Auth.tsx ............ signed out — AuthForm (sign in / register)
+             ├── pages/Auth.tsx ............ signed out — AuthForm (sign in / register) + AboutDialog (info button, bottom-left)
              └── pages/Index.tsx ........... owns useGradeStore, header shell, empty state, carousel
                   ├── NewCourseDialog ...... prompts for a course name
                   ├── ImportLocalDataDialog  one-time offer of pre-accounts localStorage data

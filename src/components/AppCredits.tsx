@@ -13,8 +13,11 @@ interface AppCreditsProps {
  * session skips that screen. One component so the two can't drift apart.
  */
 export function AppCredits({ className }: AppCreditsProps) {
+  // Smaller than `text-xs`, so the disclaimer fits on one line under the
+  // sign-in card instead of orphaning "Columbia.": it needs ~353px at 11px,
+  // which the 384px card has, but a 375px phone leaves only 343px.
   return (
-    <div className={cn('space-y-1 text-xs text-muted-foreground', className)}>
+    <div className={cn('space-y-1 text-[10px] text-muted-foreground sm:text-[11px]', className)}>
       <p>Not affiliated with or endorsed by the University of British Columbia.</p>
       <p>
         App icon:{' '}
