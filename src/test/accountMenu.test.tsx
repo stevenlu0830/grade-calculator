@@ -57,6 +57,14 @@ describe('AccountMenu', () => {
     expect(screen.getByText('student@ubc.ca')).toBeTruthy();
   });
 
+  it('shows the credits, for a restored session that never saw the sign-in screen', () => {
+    render(<AccountMenu email="student@ubc.ca" />);
+
+    openMenu();
+
+    expect(screen.getByRole('link', { name: /awicon - flaticon/i })).toBeTruthy();
+  });
+
   it('signs out', async () => {
     render(<AccountMenu email="student@ubc.ca" />);
 

@@ -11,18 +11,20 @@
       /favicon.ico lookup, which caches hard enough to keep serving a stale icon
       long after the file changes. The ?v= query is the cache buster: bump it
       whenever the icon is replaced.
+
+      Both icon files are Flaticon's free "exam" icon, which is licensed on
+      condition of a visible credit — a comment here doesn't count. That credit
+      is rendered by AppCredits, on the sign-in screen and in the account menu.
+      Neither file is covered by this repo's MIT license.
     -->
-    <link rel="icon" type="image/png" href="/favicon.png?v=2" />
+    <link rel="icon" type="image/png" href="/favicon.png?v=3" />
 
     <!--
-      The iOS "Add to Home Screen" icon, kept separate from the favicon. It is
-      180×180 (the size iOS asks for), flattened onto white because iOS fills
-      transparent pixels with black, which would swallow the black linework, and
-      padded so the rounded-corner mask doesn't clip the artwork. Same ?v= rule
-      as the favicon.
-
-      Icon attribution:
-      <a href="https://www.flaticon.com/free-icons/exam" title="exam icons">Exam icons created by Awicon - Flaticon</a>
+      The iOS "Add to Home Screen" icon, kept as its own file even though it is
+      currently the same artwork as the favicon. It is 180×180 (the size iOS asks
+      for), flattened onto white because iOS fills transparent pixels with black,
+      which would swallow the black linework, and padded so the rounded-corner
+      mask doesn't clip the artwork. Same ?v= rule as the favicon.
     -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=1" />
 

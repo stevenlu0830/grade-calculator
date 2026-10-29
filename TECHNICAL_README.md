@@ -27,7 +27,7 @@ A single-page, client-only calculator for UBC-style weighted course grades. A st
 | Components | shadcn/ui over Radix | 48 vendored primitives, 13 in use |
 | Toasts | `sonner` | shadcn `use-toast` also present but unused |
 | Auth & data | Supabase (`@supabase/supabase-js` 2) | Email + password; one `jsonb` row per user, guarded by RLS (§5a) |
-| Tests | Vitest 3 + jsdom + Testing Library | 774 tests in `src/test/`; 100% of statements and lines, `npm run test:coverage` |
+| Tests | Vitest 3 + jsdom + Testing Library | 778 tests in `src/test/`; 100% of statements and lines, `npm run test:coverage` |
 
 **Present but inert:** `@tanstack/react-query` (provider mounted, no queries), `next-themes` (no provider — dark mode unreachable), `zod`, `react-hook-form`, `recharts`, `date-fns`, `embla-carousel`. Scaffolding from the Lovable template. `jspdf`/`jspdf-autotable` are now unused too, since PDF export was removed — still in `package.json`, no longer in the bundle.
 
@@ -77,7 +77,7 @@ Until they are set, every scheduled run fails with `Set the SUPABASE_URL and SUP
 
 `npm run dev` opens the OS default browser via Vite's `server.open`. Set `BROWSER=none npm run dev` to suppress it — useful in CI, or when an editor preview is already attached.
 
-This project was scaffolded with Lovable ([project dashboard](https://lovable.dev/projects/d0699e8b-131a-4000-8300-6958b9e4ca5b)); changes pushed to the repo and changes made there stay in sync. Editing locally, in GitHub's web editor, or in a Codespace all work.
+This project was scaffolded with [Lovable](https://lovable.dev); changes pushed to the repo and changes made in its Lovable project stay in sync. Editing locally, in GitHub's web editor, or in a Codespace all work.
 
 ## 4. Domain model
 
@@ -361,7 +361,7 @@ main.tsx → App.tsx (providers + router + auth gate)
              └── pages/Index.tsx ........... owns useGradeStore, header shell, empty state, carousel
                   ├── NewCourseDialog ...... prompts for a course name
                   ├── ImportLocalDataDialog  one-time offer of pre-accounts localStorage data
-                  ├── AccountMenu .......... signed-in email + sign out
+                  ├── AccountMenu .......... signed-in email + sign out + AppCredits
                   ├── CourseToolbar ........ import / export / new-course actions + their toasts
                   └── CourseSection ........ weight validation, final grade (pinned header), course delete
                        ├── AddBreakdownDialog .. preset picker + weight (one instance per course)
@@ -498,7 +498,7 @@ Ordered roughly by how likely each is to bite you.
 - **New UI primitive:** `npx shadcn@latest add <name>` — never hand-write into `src/components/ui/`.
 - **New semantic color:** hex var in both `:root` and `.dark` in `index.css`, then map it in `tailwind.config.ts` as `token("--your-var")` — a bare `"var(--your-var)"` compiles, but silently ignores every `/N` opacity modifier. For a *grade* colour, add the class strings to the `LETTER_SCALE` row that uses them — spelled out as literals, since Tailwind only ships classes it can find by scanning.
 - **New export format:** write a pure `build…` function, then a wrapper that calls `downloadBlob` with `timestampedFilename`. Keep the wrapper too small to need a test.
-- **Replacing the favicon:** drop the file in `public/`, point the `<link rel="icon">` at it, and bump the `?v=` query — otherwise browsers keep serving the cached one. The iOS home-screen icon (`apple-touch-icon.png`) is separate: keep it a 180×180 PNG with **no transparency** (iOS fills it with black) and some padding (iOS rounds the corners), and keep its Flaticon attribution comment in `index.html` if you swap it for another Flaticon icon.
+- **Replacing the favicon:** drop the file in `public/`, point the `<link rel="icon">` at it, and bump the `?v=` query — otherwise browsers keep serving the cached one. The iOS home-screen icon (`apple-touch-icon.png`) is separate: keep it a 180×180 PNG with **no transparency** (iOS fills it with black) and some padding (iOS rounds the corners). Both are currently Flaticon's free exam icon, whose license requires a **visible** credit — that's `AppCredits`. Swapping in a different licensed icon means updating the credit there and in the README's License section; an icon of your own means deleting the credit line. Never use the UBC crest or wordmark: they are the university's trademarks, and the app is not an official tool.
 - **Another storage backend:** implement `CourseStorage` (async `load`/`save`) and pass it to `useGradeStore` — the store depends on the interface, not on any one backend. Wrap it in `debouncedStorage` if writes cost anything, and give it a stable identity (§5).
 - **Another sign-in method** (Google, magic link): enable the provider in the Supabase dashboard, add a wrapper in `src/lib/auth.ts`, and add a button to `AuthForm`. Nothing else needs to change — the gate only cares whether there's a session.
 - **A second Supabase table:** add it to a numbered file in `supabase/migrations/`, and **enable RLS with a `user_id = auth.uid()` policy in the same migration** (§5a). A table without RLS is readable by anyone holding the anon key, which is everyone.

@@ -57,6 +57,16 @@ describe('AuthLayout', () => {
     expect(screen.getByText('Only you.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
   });
+
+  it('shows the credits, since every visitor passes through this screen', () => {
+    render(
+      <AuthLayout subtitle="Sign in to keep your courses." title="Welcome" description="Only you.">
+        <button>Sign in</button>
+      </AuthLayout>
+    );
+
+    expect(screen.getByRole('link', { name: /awicon - flaticon/i })).toBeTruthy();
+  });
 });
 
 describe('CourseToolbar', () => {

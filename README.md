@@ -6,6 +6,8 @@ You build a course the way your syllabus describes it: a list of weighted catego
 
 > Looking for the code, the architecture, or the data format? That's [TECHNICAL_README.md](TECHNICAL_README.md).
 
+> **This is an independent student project.** It is not affiliated with, endorsed by, or supported by the University of British Columbia. "UBC" in the name describes the grading scale it uses. Your official grades are the ones your instructors post — not the ones this app works out.
+
 ---
 
 ## Contents
@@ -29,6 +31,7 @@ You build a course the way your syllabus describes it: a list of weighted catego
   - [Sign out](#sign-out)
 - [Grade colours and letters](#grade-colours-and-letters)
 - [Common questions](#common-questions)
+- [License](#license)
 
 ---
 
@@ -302,3 +305,11 @@ Semesters with no courses are saved on their own list, so an empty one survives 
 
 **Who can see my grades?**
 Only you. Both copies — the automatic one and the one **Save Progress** writes — are stored in your own rows of your own Supabase project, protected by row-level security, and there's no analytics or third-party tracking in the app.
+
+## License
+
+The code is released under the [MIT License](LICENSE).
+
+The app icon (`public/favicon.png` and `public/apple-touch-icon.png`) is not covered by that license. It is [Exam icons created by Awicon - Flaticon](https://www.flaticon.com/free-icons/exam), used under Flaticon's free license, which requires the credit the app shows on its sign-in screen and in the account menu. If you reuse the code, either keep that credit or replace the icon.
+
+"UBC" and "University of British Columbia" are the university's names; their use here describes the grading scale and implies no endorsement.

@@ -39,7 +39,7 @@ pages / components  →  hooks  →  lib (domain + format + io)  →  types
 
 ## Entry points
 
-- [index.html](index.html) — Vite shell; mounts `#root`. Declares the favicon **explicitly** (`/favicon.png?v=2`) rather than relying on the implicit `/favicon.ico` lookup, which cached hard enough to keep serving a stale icon. Bump the `?v=` when replacing the icon. The iOS home-screen icon is a separate file, `/apple-touch-icon.png?v=1` (Flaticon exam icon by Awicon; attribution in the comment above the link).
+- [index.html](index.html) — Vite shell; mounts `#root`. Declares the favicon **explicitly** (`/favicon.png?v=3`) rather than relying on the implicit `/favicon.ico` lookup, which cached hard enough to keep serving a stale icon. Bump the `?v=` when replacing the icon. The iOS home-screen icon is a separate file, `/apple-touch-icon.png?v=1`. Both are the Flaticon exam icon by Awicon, credited visibly by `AppCredits` (a licence condition) and excluded from the MIT [LICENSE](LICENSE).
 - [src/main.tsx](src/main.tsx) — `createRoot(...).render(<App />)`; imports `index.css`.
 - [src/App.tsx](src/App.tsx) — providers `QueryClientProvider` → `TooltipProvider` → `Toaster` + `Sonner` → `BrowserRouter` → `AuthGate`.
   - `AuthGate` picks one of four: `SupabaseSetupNotice` (no env), `FullPageLoader` (session loading), `Auth` (signed out), `SignedInApp`.
@@ -141,7 +141,8 @@ Domain rules shared by the calculator and the toggle UI so they can't disagree. 
 - [src/hooks/useAccountStorage.ts](src/hooks/useAccountStorage.ts) — `debouncedStorage(supabaseCourseStorage(userId))`, cached in a **ref** keyed on user id. A ref, not `useMemo`: only a ref guarantees the identity the store's effect depends on. Flushes pending writes on `pagehide` and on unmount.
 - [src/hooks/useLocalDataImport.ts](src/hooks/useLocalDataImport.ts) — offers pre-accounts `localStorage` data to an **empty** account, once per user (`importOfferKey(userId)`). Never merges, because it only fires when there's nothing to merge with.
 - [src/pages/Auth.tsx](src/pages/Auth.tsx) + [AuthForm.tsx](src/components/AuthForm.tsx) — sign in / register in one component with a mode toggle; the differing strings live in a `COPY` table. No success path of its own — the session change is what swaps the screen. Its one self-reported outcome is a registration awaiting an emailed link.
-- [AccountMenu.tsx](src/components/AccountMenu.tsx) — email + sign out, in the header.
+- [AccountMenu.tsx](src/components/AccountMenu.tsx) — email + sign out, in the header; ends with `AppCredits`, since a restored session never sees the sign-in screen.
+- [AppCredits.tsx](src/components/AppCredits.tsx) — "not affiliated with UBC" + the Flaticon icon credit. Rendered under the `AuthLayout` card and in `AccountMenu`. The credit is required by the icon's licence — don't remove it while the icon stays.
 - [SupabaseSetupNotice.tsx](src/components/SupabaseSetupNotice.tsx) — the four setup steps, shown instead of the app when env vars are missing.
 
 ⚠️ The anon key is public by design. **RLS on `user_data` is the only thing separating accounts** — see [supabase/migrations/0001_user_data.sql](supabase/migrations/0001_user_data.sql). Any new table needs its own policy in the same migration.
@@ -232,7 +233,7 @@ shadcn/ui over Radix. **Vendored — do not hand-edit**; re-add via CLI.
 - [tailwind.config.ts](tailwind.config.ts) — maps vars to tokens; `fade-in`/`scale-in`; `darkMode: ["class"]`.
 - ⚠️ `next-themes` is installed but no provider is mounted — **dark mode is unreachable**.
 
-## Tests — `src/test/`, 774 across 46 files
+## Tests — `src/test/`, 778 across 47 files
 
 `npm run test:coverage` writes a per-file table plus `coverage/index.html`. The vendored `src/components/ui/**`, `src/types/**` and `src/main.tsx` are excluded; everything else is at 100% of statements and lines. What is left uncovered is defensive: `typeof window === 'undefined'` guards, and `isNaN` checks behind an `<input type="number">` that can never hold a non-number.
 
@@ -250,7 +251,7 @@ The effectful wrappers are tested apart from their pure builders, against a fake
 
 Hooks: [useAccountStorage](src/test/useAccountStorage.test.ts) (stable identity, `pagehide` and unmount flushes) · [useSession](src/test/useSession.test.ts) · [useProgressSnapshot](src/test/useProgressSnapshot.test.ts) · [useLocalDataImport](src/test/localDataImport.test.ts) · the two vendored shadcn hooks, [use-mobile](src/test/useMobile.test.ts) and [use-toast](src/test/useToast.test.ts).
 
-Components, one file each, named for the component: [gradeDisplay](src/test/gradeDisplay.test.tsx) · [numberInput](src/test/numberInput.test.tsx) · [confirmDeleteDialog](src/test/confirmDeleteDialog.test.tsx) · [newCourseDialog](src/test/newCourseDialog.test.tsx) · [addSemesterDialog](src/test/addSemesterDialog.test.tsx) · [addBreakdownDialog](src/test/addBreakdownDialog.test.tsx) · [advancedOptions](src/test/advancedOptions.test.tsx) (field group + dialog) · [changeFullMarkDialog](src/test/changeFullMarkDialog.test.tsx) · [importLocalDataDialog](src/test/importLocalDataDialog.test.tsx) · [accountMenu](src/test/accountMenu.test.tsx) · [subBreakdownRow](src/test/subBreakdownRow.test.tsx) · [breakdownCard](src/test/breakdownCard.test.tsx) · [courseSection](src/test/courseSection.test.tsx) · [semesterPanel](src/test/semesterPanel.test.tsx) · [resetPasswordForm](src/test/resetPasswordForm.test.tsx) · [authFormPasswordReset](src/test/authFormPasswordReset.test.tsx) · [staticScreens](src/test/staticScreens.test.tsx) (the four with no state of their own).
+Components, one file each, named for the component: [gradeDisplay](src/test/gradeDisplay.test.tsx) · [numberInput](src/test/numberInput.test.tsx) · [confirmDeleteDialog](src/test/confirmDeleteDialog.test.tsx) · [newCourseDialog](src/test/newCourseDialog.test.tsx) · [addSemesterDialog](src/test/addSemesterDialog.test.tsx) · [addBreakdownDialog](src/test/addBreakdownDialog.test.tsx) · [advancedOptions](src/test/advancedOptions.test.tsx) (field group + dialog) · [changeFullMarkDialog](src/test/changeFullMarkDialog.test.tsx) · [importLocalDataDialog](src/test/importLocalDataDialog.test.tsx) · [accountMenu](src/test/accountMenu.test.tsx) · [appCredits](src/test/appCredits.test.tsx) · [subBreakdownRow](src/test/subBreakdownRow.test.tsx) · [breakdownCard](src/test/breakdownCard.test.tsx) · [courseSection](src/test/courseSection.test.tsx) · [semesterPanel](src/test/semesterPanel.test.tsx) · [resetPasswordForm](src/test/resetPasswordForm.test.tsx) · [authFormPasswordReset](src/test/authFormPasswordReset.test.tsx) · [staticScreens](src/test/staticScreens.test.tsx) (the four with no state of their own).
 
 Pages: [indexPage](src/test/indexPage.test.tsx) drives the whole screen end to end against in-memory storage · [app](src/test/app.test.tsx) covers the four-way auth gate and its ordering · [notFound](src/test/notFound.test.tsx).
 

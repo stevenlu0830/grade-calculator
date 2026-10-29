@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AppCredits } from './AppCredits';
 import { describeAuthError, signOut } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +18,8 @@ interface AccountMenuProps {
 }
 
 /**
- * Who's signed in, and the way out.
+ * Who's signed in, and the way out — plus the app's credits, since a restored
+ * session never passes through the sign-in screen that otherwise shows them.
  *
  * Signing out doesn't navigate: it clears the session, and the gate in `App`
  * swaps the app for the login screen on the next render.
@@ -52,6 +54,12 @@ export function AccountMenu({ email }: AccountMenuProps) {
           <LogOut className="mr-2 h-4 w-4" />
           Sign out
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {/* A label, not an item: it isn't an action, so keyboard navigation
+            through the menu shouldn't stop on it. */}
+        <DropdownMenuLabel className="font-normal">
+          <AppCredits />
+        </DropdownMenuLabel>
       </DropdownMenuContent>
     </DropdownMenu>
   );

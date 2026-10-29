@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { AppCredits } from './AppCredits';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GraduationCap } from 'lucide-react';
 
@@ -36,6 +37,8 @@ export function AuthLayout({ subtitle, title, description, children }: AuthLayou
           </CardHeader>
           <CardContent>{children}</CardContent>
         </Card>
+
+        <AppCredits className="mt-6 text-center" />
       </div>
     </div>
   );
